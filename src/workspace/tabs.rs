@@ -221,6 +221,6 @@ impl Workspace {
     }
 }
 
-mod body;
+pub mod body;
 #[cfg(test)]
 mod tests;

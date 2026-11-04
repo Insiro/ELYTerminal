@@ -35,6 +35,7 @@ impl Workspace {
                 if shown {
                     self.files.update(cx, |files, cx| files.show(folder, cx));
                     self.git.update(cx, |git, cx| git.show(folder, cx));
+                    self.keep_preview(folder, cx);
                 }
             }
             TerminalEvent::Bell if !shown => {

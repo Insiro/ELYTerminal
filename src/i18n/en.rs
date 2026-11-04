@@ -373,4 +373,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ),
     ("et.doc.failed", "This file does not read: {why}"),
     ("et.doc.missing", "The file is gone; this is its last read"),
+    ("et.files.preview", "Preview"),
+    ("et.files.open_tab", "Open as Tab"),
+    ("et.preview.close", "Close preview"),
 ];

@@ -45,6 +45,12 @@ pub(super) fn here_folder(path: &Path, folder: bool) -> PathBuf {
 /// New session here: the folder it starts in.
 pub struct Here(pub PathBuf);
 
+/// A file chosen in the tree, to preview.
+pub struct Preview(pub PathBuf);
+
+/// A file to open as a tab.
+pub struct OpenTab(pub PathBuf);
+
 /// A right press waiting to open Files' menu.
 struct MenuAsk {
     n: u64,
@@ -52,6 +58,7 @@ struct MenuAsk {
     at: Option<Point<Pixels>>,
     path: PathBuf,
     here: PathBuf,
+    file: bool,
 }
 
 /// The Files panel: the shown session's folder as a tree, Git's marks on names.
@@ -77,9 +84,13 @@ pub struct Files {
     marking: (bool, bool),
     polling: Task<()>,
     menu: Option<MenuAsk>,
+    /// The tree's chosen node.
+    chosen: Option<SharedString>,
 }
 
 impl EventEmitter<Here> for Files {}
+impl EventEmitter<Preview> for Files {}
+impl EventEmitter<OpenTab> for Files {}
 
 impl Files {
     pub fn new(root: PathBuf) -> Self {
@@ -98,7 +109,26 @@ impl Files {
             marking: (false, false),
             polling: Task::ready(()),
             menu: None,
+            chosen: None,
         }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The tree chose `of`: a file previews.
+    fn choose(&mut self, of: &SharedString, cx: &mut Context<Self>) {
+        self.chosen = Some(of.clone());
+        match self.named(of) {
+            Some((path, false)) => {
+                log::debug!("files: {} chosen", path.display());
+                cx.emit(Preview(path));
+            }
+            Some((_, true)) => {}
+            None => log::warn!("files: {of} chosen is gone"),
+        }
+        cx.notify();
     }
 
     /// Reads open folders and Git's marks each second, shown.
@@ -317,6 +347,7 @@ impl Files {
                     at: Some(at),
                     here: here_folder(&path, folder),
                     path,
+                    file: !folder,
                 });
                 cx.notify();
             }
@@ -385,12 +416,18 @@ impl Render for Files {
             _ => sessions::shown(&self.root, home.as_deref()),
         };
         let (load, open, asked) = (cx.entity(), cx.entity(), cx.entity());
-        let toggled = cx.entity();
+        let (toggled, chose) = (cx.entity(), cx.entity());
         let tree = Tree::new(
             ("files", self.generation),
             [self.folder(&self.root, label, false)],
         )
         .open(self.open_keys())
+        .selected(self.chosen.clone())
+        .on_select(move |keys, _, cx| {
+            if let Some(key) = keys.first() {
+                chose.update(cx, |files, cx| files.choose(key, cx));
+            }
+        })
         .on_load(move |key, _, cx| {
             load.update(cx, |files, cx| match files.path(key) {
                 Some(folder) => files.load(folder, cx),
@@ -416,7 +453,12 @@ impl Render for Files {
         let tree = tree
             .on_context(move |key, at, _, cx| asked.update(cx, |files, cx| files.ask(key, at, cx)));
         let items = match &self.menu {
-            Some(ask) => menu::row(&cx.entity(), ask.path.clone(), ask.here.clone(), cx),
+            Some(ask) => menu::row(
+                &cx.entity(),
+                ask.path.clone(),
+                (ask.here.clone(), ask.file),
+                cx,
+            ),
             None => Menu::new(),
         };
         let request = self.request();

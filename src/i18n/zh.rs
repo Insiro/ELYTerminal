@@ -340,4 +340,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.doc.too_large", "此文件过大，无法显示（{size}）"),
     ("et.doc.failed", "此文件无法读取：{why}"),
     ("et.doc.missing", "文件已不存在；显示的是最后一次读取的内容"),
+    ("et.files.preview", "预览"),
+    ("et.files.open_tab", "在标签页中打开"),
+    ("et.preview.close", "关闭预览"),
 ];

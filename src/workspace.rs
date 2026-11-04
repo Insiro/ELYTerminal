@@ -20,6 +20,7 @@ use gpui::{
 
 use crate::{
     blur::Blur,
+    docs::Document,
     files::{Files, Here},
     git::panel::{Acted, GitPanel},
     menus,
@@ -35,6 +36,7 @@ mod events;
 mod folder;
 mod panel;
 mod persist;
+mod preview;
 mod projects;
 mod refresh;
 mod session;
@@ -128,6 +130,9 @@ pub struct Workspace {
     persist: Option<Persist>,
     asking: Option<Asking>,
     files: Entity<Files>,
+    /// The file Files previews under its tree, and the tree's share.
+    preview: Option<Entity<Document>>,
+    preview_share: f32,
     git: Entity<GitPanel>,
     /// What the window shows of the desktop, and the blur behind it.
     background: Blur,
@@ -172,6 +177,7 @@ impl Workspace {
                 folder::failed(error, window, cx);
             }
         });
+        Self::hook_files(&files, window, cx);
         Self {
             focus: cx.focus_handle(),
             tabs: Vec::new(),
@@ -186,6 +192,8 @@ impl Workspace {
             persist: None,
             asking: None,
             files,
+            preview: None,
+            preview_share: preview::SHARE,
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),
@@ -195,6 +203,7 @@ impl Workspace {
             folder_actions: false,
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
+                this.sync_preview(window, cx);
                 let settings = SettingsStore::get(cx);
                 if !settings.files_menu || !settings.show_panel || settings.panel != PanelTab::Files
                 {
@@ -240,6 +249,7 @@ impl Workspace {
     fn follow(&mut self, folder: &Path, cx: &mut Context<Self>) {
         self.files.update(cx, |files, cx| files.show(folder, cx));
         self.git.update(cx, |git, cx| git.show(folder, cx));
+        self.keep_preview(folder, cx);
     }
 
     /// What the shown tab is called, else the selected home.
@@ -370,7 +380,7 @@ impl Render for Workspace {
                     .child(div().flex_none().child(self.folder_actions(cx)))
                     .children(quiet.then(caption))
                     .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
-                    .child(body(tab == PanelTab::Files).child(self.files.clone())),
+                    .child(body(tab == PanelTab::Files).child(self.files_body(cx))),
             );
         } else {
             shell = shell.column(terminal.action(end));

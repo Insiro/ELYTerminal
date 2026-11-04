@@ -286,6 +286,7 @@ fn a_menu_request_goes_out_once() {
         at: Some(at),
         path: PathBuf::from("/tmp/a"),
         here: PathBuf::from("/tmp"),
+        file: true,
     });
     assert_eq!(files.request(), Some((7, at)));
     assert_eq!(files.request(), None, "a hidden column must not reopen it");
