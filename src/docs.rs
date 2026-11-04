@@ -17,6 +17,8 @@ pub mod read;
 #[cfg(test)]
 mod tests;
 mod view;
+#[cfg(any(target_os = "macos", test))]
+mod web;
 
 use kind::{Kind, language};
 use read::{Found, Read, Stamp, look};
@@ -75,16 +77,18 @@ pub struct Document {
     /// The poll, while visible.
     polling: Option<Task<()>>,
     reading: Task<()>,
-    _released: Subscription,
+    /// Whether the owner lets a web view lie over the window now: no dialog asks.
+    web: bool,
+    _hooks: Vec<Subscription>,
 }
 
 impl EventEmitter<DocEvent> for Document {}
 
 impl Focusable for Document {
-    /// The editor's, so its keys work; else the document's own.
+    /// The editor's, so its keys work; else, and while a web view may show, the document's own.
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         match &self.shown {
-            Shown::Code(editor) => editor.focus_handle(cx),
+            Shown::Code(editor) if !self.webby() => editor.focus_handle(cx),
             _ => self.focus.clone(),
         }
     }
@@ -109,7 +113,13 @@ impl Document {
             cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder))
         });
         // An image leaves the cache and the atlas with its document.
-        let released = cx.on_release(|doc, cx| doc.forget_image(cx));
+        let mut hooks = vec![cx.on_release(|doc, cx| doc.forget_image(cx))];
+        let focus = cx.focus_handle();
+        // A web view draws over everything, so it shows only while the document holds the keys.
+        if cfg!(target_os = "macos") && kind == Kind::Html && place == Place::Tab {
+            hooks.push(cx.on_focus_in(&focus, window, |_, _, cx| cx.notify()));
+            hooks.push(cx.on_focus_out(&focus, window, |_, _, _, cx| cx.notify()));
+        }
         let mut doc = Self {
             path,
             kind,
@@ -117,7 +127,7 @@ impl Document {
             shown: Shown::Loading,
             stamp: None,
             missing: false,
-            focus: cx.focus_handle(),
+            focus,
             scroll: ScrollHandle::new(),
             search,
             visible: false,
@@ -125,7 +135,8 @@ impl Document {
             version: 0,
             polling: None,
             reading: Task::ready(()),
-            _released: released,
+            web: false,
+            _hooks: hooks,
         };
         doc.set_visible(visible, window, cx);
         doc
@@ -165,6 +176,24 @@ impl Document {
 
     pub fn place(&self) -> Place {
         self.place
+    }
+
+    /// Whether HTML shows as a page: in a tab, on macOS.
+    fn webby(&self) -> bool {
+        cfg!(target_os = "macos") && self.kind == Kind::Html && self.place == Place::Tab
+    }
+
+    /// Lets a web view lie over the window, or not while a dialog asks.
+    pub fn allow_web(&mut self, allowed: bool, cx: &mut Context<Self>) {
+        if self.web != allowed && self.webby() {
+            log::debug!(
+                "docs: {} {} its page",
+                self.path.display(),
+                if allowed { "may show" } else { "hides" }
+            );
+            self.web = allowed;
+            cx.notify();
+        }
     }
 
     /// Whether the file went since it was read.

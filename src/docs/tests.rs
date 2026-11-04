@@ -176,3 +176,17 @@ fn a_look_reads_only_a_changed_stamp() {
     assert_eq!(look(&path, Kind::Json, Some(first)), Found::Gone);
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn a_page_address_escapes_its_path_and_carries_the_stamp() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let stamp = super::read::Stamp {
+        mtime: Some(UNIX_EPOCH + Duration::from_nanos(1_500)),
+        len: 42,
+    };
+    let url = super::web::file_url(Path::new("/tmp/my site/a#b%.html"), &stamp);
+    assert_eq!(
+        url.as_deref(),
+        Some("file:///tmp/my%20site/a%23b%25.html?v=1500-42")
+    );
+}

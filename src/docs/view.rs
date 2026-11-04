@@ -16,6 +16,9 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
 
+#[cfg(target_os = "macos")]
+use ely_gpui_component::misc::{WebSource, WebView};
+
 use super::{
     DocEvent, Document, Shown,
     kind::Kind,
@@ -98,7 +101,23 @@ impl Document {
             .into_any_element()
     }
 
-    fn body(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// HTML in a tab on macOS as its page, while no dialog asks and the document holds the keys, since a page draws over menus and dialogs; else none, and its source shows.
+    #[cfg(target_os = "macos")]
+    fn page(&self, window: &Window, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.webby() || !self.web || !self.focus.contains_focused(window, cx) {
+            return None;
+        }
+        let url = super::web::file_url(&self.path, self.stamp.as_ref()?)?;
+        let page = WebView::new(self.id("doc-web", cx), WebSource::Url(url.into()));
+        Some(div().flex_1().min_h_0().child(page).into_any_element())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn page(&self, _: &Window, _: &Context<Self>) -> Option<AnyElement> {
+        None
+    }
+
+    fn body(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         match &self.shown {
             Shown::Loading => div().size_full().into_any_element(),
             Shown::Text(body) => match (self.kind, &self.search) {
@@ -117,7 +136,14 @@ impl Document {
                 _ => self.markdown(body, cx),
             },
             Shown::Code(editor) => {
-                let editor = div().flex_1().min_h_0().child(editor.clone());
+                let editor = match self.page(window, cx) {
+                    Some(page) => page,
+                    None => div()
+                        .flex_1()
+                        .min_h_0()
+                        .child(editor.clone())
+                        .into_any_element(),
+                };
                 let mut column = div().size_full().flex().flex_col();
                 if self.kind == Kind::Html {
                     let path = self.path.clone();
@@ -156,7 +182,7 @@ impl Document {
 }
 
 impl Render for Document {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let banner = self.missing.then(|| {
             let message = InlineMessage::new(Severity::Warning, text(cx, "et.doc.missing", &[]));
             div()
@@ -174,6 +200,6 @@ impl Render for Document {
             .flex()
             .flex_col()
             .children(banner)
-            .child(div().flex_1().min_h_0().child(self.body(cx)))
+            .child(div().flex_1().min_h_0().child(self.body(window, cx)))
     }
 }

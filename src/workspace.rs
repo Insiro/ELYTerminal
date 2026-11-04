@@ -276,6 +276,11 @@ impl Render for Workspace {
         self.background.fit(window);
         let now = Instant::now();
         self.tick(now, cx);
+        // A page lies over every dialog, so it waits while one asks.
+        if let Some(doc) = self.current().and_then(Tab::doc) {
+            let allowed = self.asking.is_none();
+            doc.update(cx, |doc, cx| doc.allow_web(allowed, cx));
+        }
         let settings = SettingsStore::get(cx);
         let workspace = cx.entity();
         // It leads the first column or ends the last.
