@@ -91,34 +91,35 @@ impl Workspace {
             return;
         };
         if self.current_id() == Some(id) {
-            if let Some(session) = self.tabs[index].term() {
-                window.focus(&session.terminal.focus_handle(cx), cx);
-            }
+            self.tabs[index].focus(window, cx);
             return;
         }
-        let hidden = self.current().filter(|tab| tab.id != id);
-        if let Some(hidden) = hidden.and_then(Tab::term) {
-            hidden.terminal.update(cx, |view, cx| {
-                view.let_go(cx);
-                view.set_front(false, window);
-            });
+        if let Some(hidden) = self.current().filter(|tab| tab.id != id) {
+            hidden.hide(window, cx);
         }
         let tab = &mut self.tabs[index];
         self.selected = tab.home.clone();
         self.shown.insert(tab.home.clone(), id);
-        if let Some(session) = tab.term_mut() {
-            session.bell = false;
-            session.waiting = false;
-            session
-                .terminal
-                .update(cx, |view, _| view.set_front(true, window));
-            window.focus(&session.terminal.focus_handle(cx), cx);
-            let folder = session.folder.clone();
-            self.follow(&folder, cx);
+        match &mut tab.body {
+            Body::Term(session) => {
+                session.bell = false;
+                session.waiting = false;
+                session
+                    .terminal
+                    .update(cx, |view, _| view.set_front(true, window));
+                window.focus(&session.terminal.focus_handle(cx), cx);
+                let folder = session.folder.clone();
+                self.follow(&folder, cx);
+            }
+            // The panels keep their folder while a document shows.
+            Body::Doc(doc) => {
+                doc.update(cx, |doc, cx| doc.set_visible(true, window, cx));
+                window.focus(&doc.focus_handle(cx), cx);
+            }
         }
         log::debug!("app: tab {} shown", id.0);
         self.dirty(cx);
-        self.retitle(window);
+        self.retitle(window, cx);
         cx.notify();
     }
 
@@ -136,7 +137,7 @@ impl Workspace {
             None => log::error!("app: no home folder for the panels"),
         }
         log::debug!("app: home {:?} shows no tab", self.selected);
-        self.retitle(window);
+        self.retitle(window, cx);
         cx.notify();
     }
 
@@ -168,7 +169,7 @@ impl Workspace {
                     .terminal
                     .update(cx, |view, _| view.set_front(false, window));
             }
-            None => log::info!("app: tab {} closes", id.0),
+            None => log::info!("app: document tab {} closes", id.0),
         }
         self.dirty(cx);
         if self.shown.get(&home) != Some(&id) {

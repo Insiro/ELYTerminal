@@ -72,7 +72,7 @@ impl Workspace {
             }
         }
         if shown {
-            self.retitle(window);
+            self.retitle(window, cx);
         }
         cx.notify();
     }

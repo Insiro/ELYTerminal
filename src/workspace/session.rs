@@ -235,7 +235,7 @@ impl Workspace {
         self.tabs.push(Tab {
             id,
             home,
-            body: Body::Term(session),
+            body: Body::Term(Box::new(session)),
         });
         id
     }

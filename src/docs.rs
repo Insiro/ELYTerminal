@@ -79,8 +79,12 @@ pub struct Document {
 impl EventEmitter<DocEvent> for Document {}
 
 impl Focusable for Document {
-    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
-        self.focus.clone()
+    /// The editor's, so its keys work; else the document's own.
+    fn focus_handle(&self, cx: &gpui::App) -> FocusHandle {
+        match &self.shown {
+            Shown::Code(editor) => editor.focus_handle(cx),
+            _ => self.focus.clone(),
+        }
     }
 }
 
@@ -219,45 +223,48 @@ impl Document {
 
     /// Wears a read: text into its view, an image decoded afresh, or why it cannot show.
     fn show(&mut self, read: Read, window: &mut Window, cx: &mut Context<Self>) {
-        self.shown =
-            match read {
-                Read::Text(body) => match self.kind {
-                    Kind::Text | Kind::Html => match &self.shown {
-                        Shown::Code(editor) => {
-                            let editor = editor.clone();
-                            editor.update(cx, |editor, cx| {
-                                if editor.text() != body {
-                                    editor.set_text(body, cx);
-                                }
-                            });
-                            Shown::Code(editor)
-                        }
-                        _ => {
-                            let name = language(&self.path);
-                            Shown::Code(cx.new(|cx| {
-                                CodeEditor::new(body, window, cx).language(name).read_only()
-                            }))
-                        }
-                    },
-                    _ => match &self.shown {
-                        Shown::Text(was) if **was == *body => return,
-                        _ => Shown::Text(body.into()),
-                    },
-                },
-                Read::Image => {
-                    let source = Resource::Path(self.path.clone().into());
-                    if matches!(&self.shown, Shown::Image(_)) {
-                        cx.remove_asset::<ImageAssetLoader>(&source);
+        self.shown = match read {
+            Read::Text(body) => match self.kind {
+                Kind::Text | Kind::Html => match &self.shown {
+                    Shown::Code(editor) => {
+                        let editor = editor.clone();
+                        editor.update(cx, |editor, cx| {
+                            if editor.text() != body {
+                                editor.set_text(body, cx);
+                            }
+                        });
+                        Shown::Code(editor)
                     }
-                    Shown::Image(source)
+                    _ => {
+                        let name = language(&self.path);
+                        let editor = cx
+                            .new(|cx| CodeEditor::new(body, window, cx).language(name).read_only());
+                        // Keys given before the first read go on to the editor.
+                        if self.focus.is_focused(window) {
+                            window.focus(&editor.focus_handle(cx), cx);
+                        }
+                        Shown::Code(editor)
+                    }
+                },
+                _ => match &self.shown {
+                    Shown::Text(was) if **was == *body => return,
+                    _ => Shown::Text(body.into()),
+                },
+            },
+            Read::Image => {
+                let source = Resource::Path(self.path.clone().into());
+                if matches!(&self.shown, Shown::Image(_)) {
+                    cx.remove_asset::<ImageAssetLoader>(&source);
                 }
-                Read::Binary => Shown::Binary,
-                Read::TooLarge(size) => Shown::TooLarge(size),
-                Read::Failed(why) => {
-                    log::error!("docs: {} does not read: {why}", self.path.display());
-                    Shown::Failed(why)
-                }
-                Read::Missing => unreachable!("a look turns a missing read into Gone"),
-            };
+                Shown::Image(source)
+            }
+            Read::Binary => Shown::Binary,
+            Read::TooLarge(size) => Shown::TooLarge(size),
+            Read::Failed(why) => {
+                log::error!("docs: {} does not read: {why}", self.path.display());
+                Shown::Failed(why)
+            }
+            Read::Missing => unreachable!("a look turns a missing read into Gone"),
+        };
     }
 }

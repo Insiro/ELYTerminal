@@ -333,7 +333,7 @@ impl Workspace {
             project.name
         );
         self.dirty(cx);
-        self.retitle(window);
+        self.retitle(window, cx);
         cx.notify();
     }
 

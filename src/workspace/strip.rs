@@ -11,7 +11,7 @@ use ely_gpui_component::{
 };
 use gpui::{Context, IntoElement, ParentElement, SharedString, Styled, div};
 
-use super::Workspace;
+use super::{Workspace, doctabs, tabs::Body};
 use crate::{
     projects::TabId,
     sessions::{Need, menu},
@@ -50,12 +50,16 @@ impl Workspace {
         let settings = SettingsStore::get(cx);
         let workspace = cx.entity();
         let tabs = self.strip().into_iter().filter_map(|id| {
-            let session = self.tabs[self.index(id)?].term()?;
-            let icon = match session.need() {
-                Need::Calm if session.claude.is_some() => IconName::Bot,
-                need => icon(need),
+            let tab = &self.tabs[self.index(id)?];
+            let icon = match &tab.body {
+                Body::Term(session) => match session.need() {
+                    Need::Calm if session.claude.is_some() => IconName::Bot,
+                    need => icon(need),
+                },
+                Body::Doc(doc) if doc.read(cx).missing() => IconName::CircleX,
+                Body::Doc(doc) => doc.read(cx).kind().icon(),
             };
-            Some(EditorTab::new(key(id), session.named().to_string()).icon(icon))
+            Some(EditorTab::new(key(id), tab.title(cx)).icon(icon))
         });
         let (select, close) = (workspace.clone(), workspace.clone());
         let mut strip = EditorTabs::new("tabs", tabs)
@@ -84,11 +88,15 @@ impl Workspace {
             .size(ControlSize::Sm)
             .tooltip(text(cx, "et.session.new", &[]))
             .on_click(move |_, window, cx| new.update(cx, |this, cx| this.new_session(window, cx)));
-        let more = self.current_id().map(|id| {
-            let claude = self
-                .index(id)
-                .and_then(|at| self.tabs[at].term()?.claude.clone());
-            let menu = menu::tab(&workspace, id, (settings.session_menu, claude), cx);
+        let more = self.current().map(|tab| {
+            let id = tab.id;
+            let menu = match &tab.body {
+                Body::Term(session) => {
+                    let claude = session.claude.clone();
+                    menu::tab(&workspace, id, (settings.session_menu, claude), cx)
+                }
+                Body::Doc(doc) => doctabs::menu(&workspace, id, doc.read(cx), cx),
+            };
             OverflowMenu::new("tab-menu", menu).tooltip(text(cx, "et.tab.more", &[]))
         });
         div()

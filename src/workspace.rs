@@ -30,6 +30,7 @@ use crate::{
 
 mod claude;
 mod dialogs;
+mod doctabs;
 mod events;
 mod folder;
 mod panel;
@@ -242,17 +243,17 @@ impl Workspace {
     }
 
     /// What the shown tab is called, else the selected home.
-    fn title(&self) -> String {
-        match self.current().and_then(|tab| tab.term()) {
-            Some(session) => session.named().to_string(),
+    fn title(&self, cx: &App) -> String {
+        match self.current() {
+            Some(tab) => tab.title(cx),
             None => self
                 .home_label(&self.selected)
                 .unwrap_or_else(|| TITLE.into()),
         }
     }
 
-    fn retitle(&self, window: &mut Window) {
-        let title = self.title();
+    fn retitle(&self, window: &mut Window, cx: &App) {
+        let title = self.title(cx);
         if window.window_title() != title {
             log::debug!("app: the title is {title:?}");
             window.set_window_title(&title);
@@ -303,13 +304,14 @@ impl Render for Workspace {
             .children(gear)
             .child(right);
         let mut shell = ColumnShell::new("workspace").glass();
-        let body = match self.current().and_then(|tab| tab.term()) {
-            Some(session) => session.terminal.clone().into_any_element(),
+        let body = match self.current().map(|tab| &tab.body) {
+            Some(Body::Term(session)) => session.terminal.clone().into_any_element(),
+            Some(Body::Doc(doc)) => doc.clone().into_any_element(),
             None if self.dormant.contains_key(&self.selected) => self.asleep(cx),
             None => self.empty(cx).into_any_element(),
         };
         let mut terminal = ShellColumn::new("terminal")
-            .title(self.title())
+            .title(self.title(cx))
             .child(self.tab_strip(cx))
             .child(div().flex_1().min_h_0().child(body));
         if settings.show_sessions {

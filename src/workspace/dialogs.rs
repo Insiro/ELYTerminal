@@ -5,7 +5,7 @@ use ely_gpui_component::{
     i18n::text,
     overlays::{ConfirmDialog, PromptDialog},
 };
-use gpui::{AnyElement, AppContext, Context, Entity, Focusable, IntoElement, Window};
+use gpui::{AnyElement, AppContext, Context, Entity, IntoElement, Window};
 
 use super::{
     TITLE, Workspace,
@@ -76,7 +76,7 @@ impl Workspace {
             log::info!("app: tab {} is named {:?}", id.0, session.name);
         }
         self.dirty(cx);
-        self.retitle(window);
+        self.retitle(window, cx);
         cx.notify();
     }
 
@@ -102,8 +102,8 @@ impl Workspace {
 
     /// Gives the shown tab the keys again, else the workspace.
     fn refocus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.current().and_then(|tab| tab.term()) {
-            Some(session) => window.focus(&session.terminal.focus_handle(cx), cx),
+        match self.current() {
+            Some(tab) => tab.focus(window, cx),
             None => window.focus(&self.focus, cx),
         }
     }
