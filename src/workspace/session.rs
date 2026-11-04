@@ -168,14 +168,14 @@ impl Workspace {
             Start::In(folder) => Some(folder.clone()),
         };
         let mut launch = launch(shell, &args, start, &cx.global::<ShellIntegration>().0)?;
-        if let Some((id, mode)) = &claude {
-            ready(&mut launch, id, *mode, &settings.claude_prelude, cx)?;
-        }
+        let watched = match &claude {
+            Some((id, mode)) => ready(&mut launch, id, *mode, &settings.claude_prelude, cx)?,
+            None => false,
+        };
         let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(settings))?;
         let id = self.add(pty, events, launch, (args, home, started), window, cx);
         if let Some((claude, _)) = claude {
-            let at = self.index(id).expect("the tab just added");
-            self.tabs[at].session_mut().claude = Some(claude);
+            self.watch_claude((id, claude), watched, window, cx);
         }
         if let Some(at) = after.and_then(|after| self.index(after)) {
             let tab = self.tabs.pop().expect("the tab just added");

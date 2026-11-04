@@ -45,11 +45,14 @@ pub fn config_dir() -> Option<PathBuf> {
     }
 }
 
-/// Whether `projects/*/<id>.jsonl` exists; None when the folders cannot be read.
+/// Whether `projects/*/<id>.jsonl` exists; None when the folders are missing or cannot be read.
 pub fn transcript(id: &str, config_dir: &Path) -> Option<bool> {
     let projects = match std::fs::read_dir(config_dir.join("projects")) {
         Ok(projects) => projects,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            log::info!("claude: {} holds no projects", config_dir.display());
+            return None;
+        }
         Err(error) => {
             log::warn!("claude: cannot read {}: {error}", config_dir.display());
             return None;
@@ -114,15 +117,26 @@ impl Modes {
         }
     }
 
-    /// The mode `id` restores in; Resume when it was not looked for.
+    /// The mode `id` restores in; Resume while the search runs or when it was not looked for.
     pub fn of(&mut self, id: &str) -> Mode {
-        if let Some(finding) = self.finding.take() {
+        if self
+            .finding
+            .as_ref()
+            .is_some_and(|finding| finding.is_finished())
+            && let Some(finding) = self.finding.take()
+        {
             match finding.join() {
                 Ok(found) => self.found = found,
                 Err(_) => log::error!("claude: the transcript search panicked"),
             }
         }
-        self.found.get(id).copied().unwrap_or(Mode::Resume)
+        match self.found.get(id) {
+            Some(mode) => *mode,
+            None => {
+                log::info!("claude: {id}'s transcript is not known yet, so it resumes");
+                Mode::Resume
+            }
+        }
     }
 }
 
@@ -135,31 +149,78 @@ pub enum Heard {
     Done(Option<i32>),
 }
 
-/// Follows a Claude tab's marks: the integration's prompt start, then its command, until that command ends.
+/// How Claude's watch ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum End {
+    /// Its command ended with a status.
+    Exited,
+    /// The integration said, by a bare D before Claude's command, that it does not start.
+    Skipped,
+}
+
+/// Follows a Claude tab's marks until Claude's command, the one a prompt start leads straight into, ends.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Watch {
     #[default]
     Starting,
-    /// A prompt started; Claude's command starts before its input does.
+    /// A prompt started; a command now, before any input, is Claude's.
     Prompted,
     Running,
-    /// The first prompt read input: Claude never started.
     Off,
+    /// cmd marks no command, so Claude's end goes unheard.
+    Blind,
 }
 
 impl Watch {
-    /// Hears `mark`; true once Claude's command ended with a status.
-    pub fn hear(&mut self, mark: Heard) -> bool {
-        match (*self, mark) {
-            (Self::Starting, Heard::Prompt) => *self = Self::Prompted,
-            (Self::Prompted, Heard::Output) => *self = Self::Running,
-            (Self::Prompted, Heard::Input) => *self = Self::Off,
-            (Self::Running, Heard::Done(Some(_))) => {
-                *self = Self::Off;
-                return true;
+    /// Hears `mark`; how the watch ended, once it does.
+    pub fn hear(&mut self, mark: Heard) -> Option<End> {
+        let end = match (*self, mark) {
+            (Self::Starting | Self::Prompted, Heard::Prompt) => {
+                *self = Self::Prompted;
+                None
             }
-            _ => {}
+            (Self::Prompted, Heard::Input) => {
+                *self = Self::Starting;
+                None
+            }
+            (Self::Prompted, Heard::Output) => {
+                *self = Self::Running;
+                None
+            }
+            (Self::Starting | Self::Prompted, Heard::Done(None)) => Some(End::Skipped),
+            (Self::Running, Heard::Done(Some(_))) => Some(End::Exited),
+            _ => None,
+        };
+        if end.is_some() {
+            *self = Self::Off;
         }
-        false
+        end
     }
+
+    /// Whether Claude's command has yet to start.
+    pub fn waiting(self) -> bool {
+        matches!(self, Self::Starting | Self::Prompted)
+    }
+
+    /// Whether marks still matter to it.
+    pub fn listening(self) -> bool {
+        matches!(self, Self::Starting | Self::Prompted | Self::Running)
+    }
+}
+
+/// cmd's `/k` command: the prelude, then Claude; a prelude cmd would read apart, with `"` or `%`, is refused.
+#[cfg(any(windows, test))]
+pub fn cmd_line(id: &str, mode: Mode, prelude: &str) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        !prelude.contains(['"', '%']),
+        "claude_prelude holds \" or %, which cmd reads apart"
+    );
+    let word = match mode {
+        Mode::New => "--session-id",
+        Mode::Resume => "--resume",
+    };
+    Ok(match prelude {
+        "" => format!("claude {word} {id}"),
+        prelude => format!("{prelude} & claude {word} {id}"),
+    })
 }

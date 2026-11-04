@@ -31,6 +31,11 @@ impl TerminalView {
         })
     }
 
+    /// Whether it hands its marks on, while a Claude tab watches them.
+    pub fn watch_marks(&mut self, on: bool) {
+        self.watched = on;
+    }
+
     pub(super) fn handle(&mut self, events: Vec<PtyEvent>, cx: &mut Context<Self>) {
         let drawn = events
             .iter()
@@ -38,7 +43,9 @@ impl TerminalView {
         for event in events {
             if let PtyEvent::Mark(mark, holder) = &event {
                 self.records.mark(mark, *holder);
-                cx.emit(TerminalEvent::Marked(heard(mark)));
+                if self.watched {
+                    cx.emit(TerminalEvent::Marked(heard(mark)));
+                }
             }
             match event {
                 PtyEvent::Folder(folder) => {

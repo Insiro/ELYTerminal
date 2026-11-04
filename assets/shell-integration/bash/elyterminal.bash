@@ -65,26 +65,42 @@ _ely_prompt() {
   title=${PWD##*/}
   [ -n "$dir" ] && builtin printf '\e]7;file://%s\a' "$url"
   builtin printf '\e]2;%s\a' "${title//[[:cntrl:]]/}"
-  [ -n "$_ely_cl_ask" ] && _ely_claude
   builtin return $ret
 }
-# Claude as a marked command, once: no eval of its id.
+# Claude as a marked command of its own, once, after every other prompt command; no eval of its id.
 _ely_claude() {
-  builtin local word= id=${_ely_cl_ask#*:} prelude=$_ely_cl_pre re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  builtin local word= id=${_ely_cl_ask#*:} line= ret old errexit= re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   case ${_ely_cl_ask%%:*} in
     new) word=--session-id ;;
     resume) word=--resume ;;
   esac
+  line="claude $word $id"
+  [ -n "$_ely_cl_pre" ] && line=$_ely_cl_pre$'\n'$line
   _ely_cl_ask= _ely_cl_pre=
+  # A bare D before the prompt tells the terminal Claude does not start.
   if [ -z "$word" ] || ! [[ $id =~ $re ]]; then
     builtin printf 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start\n' >&2
-    builtin return
+    builtin printf '\e]133;D\a'
+    builtin return 0
   fi
-  builtin history -s "claude $word $id"
+  if ! [ -t 0 ] || ! [ -t 1 ]; then
+    builtin printf 'ELYTerminal: claude needs the terminal, so it does not start\n' >&2
+    builtin printf '\e]133;D\a'
+    builtin return 0
+  fi
+  builtin history -s "$line"
+  [[ $- == *e* ]] && errexit=1 && builtin set +e
+  # Ctrl-C ends claude, not the prompt command, so its end is marked.
+  old=$(builtin trap -p INT)
+  builtin trap : INT
   builtin printf '\e]133;A;aid=elyterminal\a\e]133;C\a\e]2;claude\a'
-  [ -n "$prelude" ] && builtin eval "$prelude"
-  claude "$word" "$id"
-  builtin printf '\e]133;D;%s\a' "$?"
+  builtin eval "$line"
+  ret=$?
+  builtin printf '\e]133;D;%s\a' "$ret"
+  builtin trap - INT
+  [ -n "$old" ] && builtin eval "$old"
+  [ -n "$errexit" ] && builtin set -e
+  builtin return 0
 }
 # Last, after anything that sets PS1 or PS0.
 _ely_mark() {
@@ -99,6 +115,7 @@ _ely_mark() {
   if [ -n "$_ely_ps0" ] && builtin shopt -q promptvars && [[ ${PS0-} != *"$_ely_ps0"* ]]; then
     PS0=$_ely_ps0${PS0-}
   fi
+  if [ -n "$_ely_cl_ask" ]; then _ely_claude; fi
 }
 PROMPT_COMMAND="_ely_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND};_ely_mark"
 # PS0 and the prompt mark a command only through expansions, which promptvars turns on.

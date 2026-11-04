@@ -123,6 +123,8 @@ pub struct TerminalView {
     shown: bool,
     /// The kitty keyboard flags, as the parser last left them.
     kitty: TermMode,
+    /// A Claude tab watches its marks.
+    watched: bool,
     _events: Task<()>,
     _blink: Task<()>,
     /// Wakes the view at its animations' next frame.
@@ -194,6 +196,7 @@ impl TerminalView {
             blinking: false,
             shown: true,
             kitty: TermMode::empty(),
+            watched: false,
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
             animate: None,

@@ -243,6 +243,11 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "Claude still runs in it; closing the tab ends it. Its session can be resumed later with claude --resume.",
     ),
     ("et.claude.close_confirm", "Close"),
+    ("et.claude.not_started", "Claude did not start"),
+    (
+        "et.claude.not_started_body",
+        "The shell never ran claude, so the tab is a plain terminal now.",
+    ),
     ("et.projects.others", "Others"),
     ("et.projects.title", "Projects"),
     ("et.projects.add", "Add project"),
@@ -260,6 +265,10 @@ pub const MESSAGES: &[(&str, &str)] = &[
     (
         "et.projects.remove_running",
         "The project leaves the list and its {count} open tabs close. Nothing on disk changes.",
+    ),
+    (
+        "et.projects.remove_claude",
+        "{count} of them run Claude, which ends.",
     ),
     ("et.projects.remove_confirm", "Remove"),
     ("et.projects.missing", "Path missing"),

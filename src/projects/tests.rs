@@ -202,7 +202,7 @@ fn ids_are_v4_and_strict() {
 fn a_transcript_is_found_by_id() {
     let config = folder("ws-claude");
     let id = claude::new_id();
-    assert_eq!(claude::transcript(&id, &config), Some(false));
+    assert_eq!(claude::transcript(&id, &config), None, "no projects folder");
     fs::create_dir_all(config.join("projects/-p-app")).expect("project folder");
     assert_eq!(claude::transcript(&id, &config), Some(false));
     fs::write(
@@ -225,34 +225,70 @@ fn a_restored_id_resumes_unless_its_transcript_is_surely_absent() {
 }
 
 #[test]
-fn claude_s_exit_is_its_command_s_end_after_the_first_prompt() {
-    use claude::{Heard::*, Watch};
-    let ended = |marks: &[claude::Heard]| {
+fn claude_s_exit_is_the_end_of_the_command_a_prompt_start_leads_into() {
+    use claude::{End, Heard::*, Watch};
+    let ends = |marks: &[claude::Heard]| {
         let mut watch = Watch::default();
-        marks.iter().filter(|mark| watch.hear(**mark)).count()
+        let ends: Vec<End> = marks.iter().filter_map(|mark| watch.hear(*mark)).collect();
+        (ends, watch)
     };
-    assert_eq!(ended(&[Prompt, Output, Done(Some(0))]), 1);
-    assert_eq!(ended(&[Prompt, Output, Done(Some(130))]), 1);
-    // A command an rc file ran before the first prompt is not Claude.
-    assert_eq!(ended(&[Output, Done(Some(0)), Prompt, Input]), 0);
-    // A start with no status leaves Claude running.
-    assert_eq!(ended(&[Prompt, Output, Done(None)]), 0);
-    assert_eq!(ended(&[Prompt, Output, Done(None), Done(Some(1))]), 1);
-    // A first prompt that reads input means Claude never ran; later commands are the user's.
-    assert_eq!(ended(&[Prompt, Input, Output, Done(Some(0))]), 0);
-    // fish's own prompt start before ours.
-    assert_eq!(ended(&[Prompt, Prompt, Output, Done(Some(0))]), 1);
-    // Once only.
+    let exited = (vec![End::Exited], Watch::Off);
+    // The scripts start Claude's command right after a prompt start of its own.
+    assert_eq!(ends(&[Prompt, Output, Done(Some(3))]), exited);
     assert_eq!(
-        ended(&[
+        ends(&[Prompt, Input, Prompt, Output, Done(Some(130))]),
+        exited
+    );
+    // A line typed ahead runs first: its own, not Claude's.
+    assert_eq!(
+        ends(&[
             Prompt,
+            Input,
             Output,
             Done(Some(0)),
             Prompt,
             Input,
+            Prompt,
             Output,
-            Done(Some(0))
+            Done(Some(3))
         ]),
-        1
+        exited
     );
+    // A command an rc file ran before the first prompt is not Claude.
+    let (none, watch) = ends(&[Output, Done(Some(0)), Prompt, Input]);
+    assert!(none.is_empty() && watch.waiting());
+    // A start with no status leaves Claude running.
+    let (none, watch) = ends(&[Prompt, Output, Done(None)]);
+    assert!(none.is_empty() && watch == Watch::Running);
+    // A bare D before Claude's command: it does not start.
+    let skipped = (vec![End::Skipped], Watch::Off);
+    assert_eq!(ends(&[Done(None), Prompt, Output, Done(Some(0))]), skipped);
+    assert_eq!(ends(&[Prompt, Input, Done(None)]), skipped);
+    // Once only.
+    assert_eq!(
+        ends(&[Prompt, Output, Done(Some(0)), Prompt, Output, Done(Some(0))]),
+        exited
+    );
+    let mut blind = Watch::Blind;
+    assert_eq!(blind.hear(Done(Some(0))), None);
+    assert!(!blind.waiting() && !blind.listening());
+}
+
+#[test]
+fn cmd_runs_the_prelude_then_claude_and_refuses_what_it_would_read_apart() {
+    let id = claude::new_id();
+    assert_eq!(
+        claude::cmd_line(&id, claude::Mode::New, "").expect("plain"),
+        format!("claude --session-id {id}")
+    );
+    assert_eq!(
+        claude::cmd_line(&id, claude::Mode::Resume, "nvm use 20").expect("a prelude"),
+        format!("nvm use 20 & claude --resume {id}")
+    );
+    for bad in ["echo \"x\"", "set P=%PATH%"] {
+        assert!(
+            claude::cmd_line(&id, claude::Mode::New, bad).is_err(),
+            "{bad}"
+        );
+    }
 }

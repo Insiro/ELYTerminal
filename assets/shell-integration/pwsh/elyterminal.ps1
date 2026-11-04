@@ -1,6 +1,7 @@
 # ELYTerminal: wrap the prompt to report folder and title and to mark prompts and commands.
 # A Claude tab's id and prelude stay the shell's own, for its first prompt.
 $global:ElyClaude = $env:ELY_CLAUDE
+$global:ElyClaudeLine = $null
 $global:ElyClaudePrelude = $env:ELY_CLAUDE_PRELUDE
 Remove-Item Env:ELY_CLAUDE, Env:ELY_CLAUDE_PRELUDE -ErrorAction Ignore
 $global:ElyPrompt = $function:prompt
@@ -37,30 +38,21 @@ function global:prompt {
     }
     "$text$esc]133;B$bel"
 }
-# Claude as a marked command, once: no eval of its id.
+# Claude's line, which the first read hands over as typed; no eval of its id. A bare D tells the terminal Claude does not start.
 function global:ElyClaude {
     $ask, $prelude = $global:ElyClaude, $global:ElyClaudePrelude
     $global:ElyClaude, $global:ElyClaudePrelude = $null, $null
-    $esc, $bel = [char]27, [char]7
     $word = if ($ask -clike 'new:*') { '--session-id' } elseif ($ask -clike 'resume:*') { '--resume' }
     $id = $ask -creplace '^[^:]*:', ''
-    if (-not $word -or $id -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
-        [Console]::Error.WriteLine('ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start')
+    $why = if (-not $word -or $id -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
+        'ELY_CLAUDE names no Claude session'
+    } elseif (-not (Test-Path Function:\PSConsoleHostReadLine)) { 'PSReadLine is not loaded' }
+    if ($why) {
+        [Console]::Error.WriteLine("ELYTerminal: $why, so claude does not start")
+        [Console]::Write("$([char]27)]133;D$([char]7)")
         return
     }
-    [Console]::Write("$esc]133;A;aid=elyterminal$bel$esc]133;C$bel$esc]2;claude$bel")
-    if ($prelude) {
-        try { Invoke-Expression $prelude } catch { [Console]::Error.WriteLine("ELYTerminal: the Claude prelude failed: $_") }
-    }
-    $global:LASTEXITCODE = $null
-    $code = try {
-        & claude $word $id
-        if ($?) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
-    } catch {
-        [Console]::Error.WriteLine("ELYTerminal: claude did not start: $_")
-        127
-    }
-    [Console]::Write("$esc]133;D;$code$bel")
+    $global:ElyClaudeLine = if ($prelude) { "$prelude`nclaude $word $id" } else { "claude $word $id" }
 }
 # Git Bash's /e/x is E:\x where nothing lies at \e\x here.
 function global:ElyDrivePath([string]$line) {
@@ -98,7 +90,13 @@ function global:ElyCmdBack {
 if (Test-Path Function:\PSConsoleHostReadLine) {
     $global:ElyReadLine = $function:PSConsoleHostReadLine
     function global:PSConsoleHostReadLine {
-        $line = ElyCmd (ElyDrivePath (& $global:ElyReadLine))
+        $claude = [bool]$global:ElyClaudeLine
+        $line = if ($claude) {
+            $line, $global:ElyClaudeLine = $global:ElyClaudeLine, $null
+            [Console]::WriteLine($line)
+            try { [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($line) } catch {}
+            $line
+        } else { ElyCmd (ElyDrivePath (& $global:ElyReadLine)) }
         if (-not [string]::IsNullOrWhiteSpace($line)) {
             $global:ElyRan = $true
             $global:ElyExit = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
@@ -120,6 +118,8 @@ if (Test-Path Function:\PSConsoleHostReadLine) {
             } else {
                 $null -eq $last -or -not $last.Find({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)
             }
+            # Claude's command starts right after a prompt start of its own, which tells it from a line typed ahead.
+            if ($claude) { [Console]::Write("$([char]27)]133;A;aid=elyterminal$([char]7)") }
             [Console]::Write("$([char]27)]133;C$([char]7)")
         }
         $line

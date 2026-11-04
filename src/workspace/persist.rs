@@ -28,7 +28,7 @@ use super::{
 use crate::{
     projects::{
         Home, TabId,
-        claude::Modes,
+        claude::{Mode, Modes},
         store::{self, Loaded, SavedTab, State},
     },
     settings::SettingsStore,
@@ -308,8 +308,16 @@ impl Workspace {
             } = tab.clone();
             let start = folder.clone().map_or(Start::Home, Start::In);
             let place = (home.clone(), None);
+            // A WSL tab's transcripts lie inside its distribution, out of sight.
+            let wsl = Path::new(&shell)
+                .file_stem()
+                .is_some_and(|stem| stem.eq_ignore_ascii_case("wsl"));
             let claude = claude.map(|id| {
-                let mode = self.modes.of(&id);
+                let mode = if wsl {
+                    Mode::Resume
+                } else {
+                    self.modes.of(&id)
+                };
                 (id, mode)
             });
             let shown = folder

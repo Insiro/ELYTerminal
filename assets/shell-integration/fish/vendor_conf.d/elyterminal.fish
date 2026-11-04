@@ -11,28 +11,48 @@ set -g _ely_cl_pre "$ELY_CLAUDE_PRELUDE"
 set -e ELY_CLAUDE
 set -e ELY_CLAUDE_PRELUDE
 if status is-interactive
-    # Claude as a marked command, once: no eval of its id.
-    function _ely_claude --on-event fish_prompt
-        test -n "$_ely_cl_ask"; or return
-        set -l word
-        switch $_ely_cl_ask
-            case 'new:*'
-                set word --session-id
-            case 'resume:*'
-                set word --resume
+    # Claude's line, put on the first prompt's command line and run; no eval of its id.
+    if test -n "$_ely_cl_ask"
+        function _ely_claude --on-event fish_prompt
+            functions -e _ely_claude
+            set -l word
+            switch "$_ely_cl_ask"
+                case 'new:*'
+                    set word --session-id
+                case 'resume:*'
+                    set word --resume
+            end
+            set -l id (string replace -r '^[^:]*:' '' -- "$_ely_cl_ask")
+            set -l line "claude $word $id"
+            test -n "$_ely_cl_pre"; and set line "$_ely_cl_pre"\n"$line"
+            set -e _ely_cl_ask
+            set -e _ely_cl_pre
+            # A bare D before the prompt tells the terminal Claude does not start.
+            if test -z "$word"; or not string match -qr '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -- $id
+                echo 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start' >&2
+                printf '\e]133;D\a'
+                return
+            end
+            set -g _ely_cl_line $line
+            # fish asks the terminal at each prompt, and a line run before the answer is read leaves the question open, which aborts fish; so the line waits a moment.
+            function _ely_claude_go --on-signal SIGUSR1
+                functions -e _ely_claude_go
+                commandline -r -- $_ely_cl_line
+                set -g _ely_cl_ran $_ely_cl_line
+                set -e _ely_cl_line
+                commandline -f execute
+            end
+            command sh -c "sleep 0.3; kill -USR1 $fish_pid" >/dev/null 2>&1 &
+            disown
+            # Claude's command starts right after a prompt start of its own, which tells it from a line typed ahead.
+            function _ely_claude_mark --on-event fish_preexec
+                set -q _ely_cl_ran; and test "$argv" = "$_ely_cl_ran"; or return
+                functions -e _ely_claude_mark
+                set -e _ely_cl_ran
+                # fish marked the start already: once more after it.
+                printf '\e]133;A;aid=elyterminal\a\e]133;C\a'
+            end
         end
-        set -l id (string replace -r '^[^:]*:' '' -- $_ely_cl_ask)
-        set -l prelude $_ely_cl_pre
-        set -g _ely_cl_ask
-        set -g _ely_cl_pre
-        if test -z "$word"; or not string match -qr '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -- $id
-            echo 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start' >&2
-            return
-        end
-        printf '\e]133;A;aid=elyterminal\a\e]133;C\a\e]2;claude\a'
-        test -n "$prelude"; and eval $prelude
-        claude $word $id
-        printf '\e]133;D;%s\a' $status
     end
     function _ely_prompt --on-event fish_prompt
         set -l dir $PWD

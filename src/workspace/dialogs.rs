@@ -162,6 +162,19 @@ impl Workspace {
                         &[("count", &count.to_string())],
                     ),
                 };
+                let claude = open
+                    .iter()
+                    .filter_map(|id| self.index(*id))
+                    .filter(|at| self.tabs[*at].session().claude.is_some())
+                    .count();
+                let message = match claude {
+                    0 => message,
+                    count => {
+                        let count = count.to_string();
+                        let more = text(cx, "et.projects.remove_claude", &[("count", &count)]);
+                        format!("{message} {more}").into()
+                    }
+                };
                 ConfirmDialog::new("remove-project", title, message, closed)
                     .confirm(text(cx, "et.projects.remove_confirm", &[]))
                     .destructive()

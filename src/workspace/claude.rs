@@ -1,6 +1,6 @@
 //! Claude tabs: a shell whose integration starts `claude` at its first prompt, by id.
 
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use ely_gpui_component::i18n::text;
 use gpui::{App, ClipboardItem, Context, Window};
@@ -9,20 +9,23 @@ use super::{Workspace, dialogs::Asking, projects::notice};
 use crate::{
     projects::{
         Home, TabId,
-        claude::{self, Heard, Mode},
+        claude::{self, End, Heard, Mode, Watch},
     },
     settings::SettingsStore,
     term::{Launch, shell},
 };
 
-/// Hands `launch`'s shell Claude's id and the prelude; refuses a shell whose integration cannot start it.
+/// How long a Claude tab waits for Claude's command to start.
+const START: Duration = Duration::from_secs(20);
+
+/// Hands `launch`'s shell Claude's id and the prelude; refuses a shell whose integration cannot start it. False when no mark tells Claude's end.
 pub(super) fn ready(
     launch: &mut Launch,
     id: &str,
     mode: Mode,
     prelude: &str,
     cx: &App,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     anyhow::ensure!(claude::valid(id), "claude: {id:?} is no session id");
     if !launch.reports {
         let program = match &launch.program {
@@ -52,24 +55,17 @@ pub(super) fn ready(
             shared.push_str(name);
         }
     }
+    log::info!("claude: a tab starts {}", claude::env(id, mode));
     // cmd has no prompt hook: it runs Claude as its own command, and no mark tells its end.
     #[cfg(windows)]
     if launch.quote == crate::term::Quote::Cmd {
-        let word = match mode {
-            Mode::New => "--session-id",
-            Mode::Resume => "--resume",
-        };
-        let command = format!("claude {word} {id}");
-        let command = match prelude {
-            "" => command,
-            prelude => format!("{prelude} & {command}"),
-        };
+        let command = claude::cmd_line(id, mode, prelude)?;
         if let Some((_, args)) = launch.program.as_mut() {
             *args = vec!["/k".into(), command];
         }
+        return Ok(false);
     }
-    log::info!("claude: a tab starts {}", claude::env(id, mode));
-    Ok(())
+    Ok(true)
 }
 
 impl Workspace {
@@ -117,17 +113,82 @@ impl Workspace {
         }
     }
 
-    /// Tab `index`'s terminal heard `mark`; Claude's end drops its id, so the tab is a shell again.
+    /// Tab `index`'s terminal heard `mark`; Claude's end, or word that it does not start, drops its id, so the tab is a shell again.
     pub(super) fn claude_marked(&mut self, index: usize, mark: Heard, cx: &mut Context<Self>) {
         let tab = self.tabs[index].id;
         let session = self.tabs[index].session_mut();
-        if session.claude.is_none() || !session.watch.hear(mark) {
+        if session.claude.is_none() {
             return;
         }
-        if let Some(id) = session.claude.take() {
-            log::info!("app: Claude {id} in tab {} ended, {mark:?}", tab.0);
+        match session.watch.hear(mark) {
+            Some(End::Exited) => log::info!("app: Claude in tab {} ended, {mark:?}", tab.0),
+            Some(End::Skipped) => log::warn!("app: Claude in tab {} did not start", tab.0),
+            None => return,
         }
+        self.drop_claude(index, cx);
+    }
+
+    /// Tab `index` runs Claude no more.
+    fn drop_claude(&mut self, index: usize, cx: &mut Context<Self>) {
+        let tab = self.tabs[index].id;
+        let session = self.tabs[index].session_mut();
+        if let Some(id) = session.claude.take() {
+            log::info!("app: tab {} forgets Claude {id}", tab.0);
+        }
+        session.watch = Watch::Off;
+        let terminal = session.terminal.clone();
+        terminal.update(cx, |view, _| view.watch_marks(false));
         self.dirty(cx);
         cx.notify();
+    }
+
+    /// Tab `id` runs Claude `claude`, its end heard while `watched`; a command that has not started in 20 s is told and forgotten.
+    pub(super) fn watch_claude(
+        &mut self,
+        (id, claude): (TabId, String),
+        watched: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.index(id) else {
+            return;
+        };
+        let session = self.tabs[index].session_mut();
+        session.claude = Some(claude.clone());
+        session.watch = if watched {
+            Watch::Starting
+        } else {
+            Watch::Blind
+        };
+        let terminal = session.terminal.clone();
+        terminal.update(cx, |view, _| view.watch_marks(watched));
+        if !watched {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(START).await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let Some(index) = this.index(id) else {
+                    return;
+                };
+                let session = this.tabs[index].session();
+                if session.claude.as_ref() != Some(&claude) || !session.watch.waiting() {
+                    return;
+                }
+                log::warn!(
+                    "app: Claude {claude} in tab {} did not start in {START:?}",
+                    id.0
+                );
+                this.drop_claude(index, cx);
+                let why = text(cx, "et.claude.not_started_body", &[]);
+                notice(
+                    "et.claude.not_started",
+                    anyhow::anyhow!("{why}"),
+                    window,
+                    cx,
+                );
+            });
+        })
+        .detach();
     }
 }

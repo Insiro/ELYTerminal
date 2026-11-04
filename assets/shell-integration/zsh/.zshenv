@@ -70,27 +70,44 @@ if [[ -o interactive ]]; then
     # sched's command leaves its status for the prompt.
     builtin return ${1:-0}
   }
-  # Claude as a marked command, once: no eval of its id.
+  # Claude's line, typed by the line editor at the first prompt; no eval of its id.
   _ely_claude() {
     builtin setopt local_options unset no_ksh_arrays no_sh_word_split no_err_return no_err_exit
-    builtin local word= id=${_ely_cl_ask#*:} prelude=$_ely_cl_pre re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    builtin local word= id=${_ely_cl_ask#*:} re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     case ${_ely_cl_ask%%:*} in
       new) word=--session-id ;;
       resume) word=--resume ;;
     esac
-    _ely_cl_ask= _ely_cl_pre=
+    _ely_cl_ask=
+    # A bare D before the prompt tells the terminal Claude does not start.
     if [[ -z $word || ! $id =~ $re ]]; then
       builtin print -ru2 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start'
-      builtin return
+      builtin printf '\e]133;D\a'
+    elif [[ ! -o zle ]]; then
+      builtin print -ru2 'ELYTerminal: claude does not start while zle is off'
+      builtin printf '\e]133;D\a'
+    else
+      _ely_cl_line="claude $word $id"
+      [[ -n $_ely_cl_pre ]] && _ely_cl_line=$_ely_cl_pre$'\n'$_ely_cl_line
+      builtin autoload -Uz add-zle-hook-widget
+      add-zle-hook-widget zle-line-init _ely_claude_line
     fi
-    builtin print -s "claude $word $id"
-    builtin printf '\e]133;A;aid=elyterminal\a\e]133;C\a\e]2;claude\a'
-    [[ -n $prelude ]] && builtin eval "$prelude"
-    claude $word $id
-    builtin printf '\e]133;D;%s\a' $?
+    _ely_cl_pre=
+  }
+  _ely_claude_line() {
+    [[ -n $_ely_cl_line ]] || builtin return 0
+    BUFFER=$_ely_cl_line
+    _ely_cl_line=
+    _ely_cl_now=1
+    builtin zle .accept-line
   }
   _ely_preexec() {
     _ely_ran=1
+    # Claude's command starts right after a prompt start of its own, which tells it from a line typed ahead.
+    if [[ -n ${_ely_cl_now-} ]]; then
+      _ely_cl_now=
+      builtin printf '\e]133;A;aid=elyterminal\a'
+    fi
     builtin printf '\e]133;C\a\e]2;%s\a' "${1//[[:cntrl:]]/}"
   }
   builtin autoload -Uz add-zsh-hook

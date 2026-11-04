@@ -228,6 +228,11 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "Claude 仍在其中运行；关闭标签页会结束它。之后可以用 claude --resume 恢复该会话。",
     ),
     ("et.claude.close_confirm", "关闭"),
+    ("et.claude.not_started", "Claude 未能启动"),
+    (
+        "et.claude.not_started_body",
+        "shell 一直没有运行 claude，因此该标签页现在是普通终端。",
+    ),
     ("et.projects.others", "其他"),
     ("et.projects.title", "项目"),
     ("et.projects.add", "添加项目"),
@@ -245,6 +250,10 @@ pub const MESSAGES: &[(&str, &str)] = &[
     (
         "et.projects.remove_running",
         "项目将从列表中移除，其 {count} 个打开的标签页将关闭，磁盘上的内容不变。",
+    ),
+    (
+        "et.projects.remove_claude",
+        "其中 {count} 个正在运行 Claude，它们也会结束。",
     ),
     ("et.projects.remove_confirm", "移除"),
     ("et.projects.missing", "路径不存在"),
