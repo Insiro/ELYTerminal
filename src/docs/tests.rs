@@ -92,7 +92,10 @@ fn reads_text_and_tells_what_it_cannot_show() {
     let image = root.join("e.png");
     fs::write(&image, b"\x89PNG").expect("a file");
     assert_eq!(read(&image, Kind::Image), Read::Image);
-    assert_eq!(read(&root.join("gone.md"), Kind::Markdown), Read::Missing);
+    assert!(matches!(
+        read(&root.join("gone.md"), Kind::Markdown),
+        Read::Failed(_)
+    ));
     assert!(
         matches!(read(&root, Kind::Text), Read::Failed(_)),
         "a folder"
@@ -142,6 +145,10 @@ fn links_lead_out_to_a_doc_or_to_a_heading() {
         ("bad%2", Link::Bad),
         ("bad%ff.md", Link::Bad),
         ("?q=1", Link::Bad),
+        ("file://localhost/tmp/a.md", Link::Doc("/tmp/a.md".into())),
+        ("file://server/share/a.md", Link::Bad),
+        ("//server/share/a.md", Link::Bad),
+        (r"\\server\share\a.md", Link::Bad),
         ("", Link::Bad),
     ];
     for (href, expected) in cases {

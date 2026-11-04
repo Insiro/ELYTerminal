@@ -316,7 +316,11 @@ impl Render for Workspace {
         let mut shell = ColumnShell::new("workspace").glass();
         let body = match self.current().map(|tab| &tab.body) {
             Some(Body::Term(session)) => session.terminal.clone().into_any_element(),
-            Some(Body::Doc(doc)) => doc.clone().into_any_element(),
+            // A document draws again only when it changed, not at each terminal frame.
+            Some(Body::Doc(doc)) => doc
+                .clone()
+                .cached(StyleRefinement::default().size_full())
+                .into_any_element(),
             None if self.dormant.contains_key(&self.selected) => self.asleep(cx),
             None => self.empty(cx).into_any_element(),
         };

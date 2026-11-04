@@ -7,8 +7,8 @@ use std::{
 
 use ely_gpui_component::{editor::CodeEditor, forms::TextInput, i18n::text};
 use gpui::{
-    AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, ImageAssetLoader, Resource,
-    ScrollHandle, SharedString, Task, Window,
+    App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, ImageAssetLoader,
+    Resource, ScrollHandle, SharedString, Subscription, Task, Window,
 };
 
 pub mod kind;
@@ -72,15 +72,17 @@ pub struct Document {
     busy: bool,
     /// Counts the reads shown.
     version: u64,
-    _polling: Task<()>,
+    /// The poll, while visible.
+    polling: Option<Task<()>>,
     reading: Task<()>,
+    _released: Subscription,
 }
 
 impl EventEmitter<DocEvent> for Document {}
 
 impl Focusable for Document {
     /// The editor's, so its keys work; else the document's own.
-    fn focus_handle(&self, cx: &gpui::App) -> FocusHandle {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
         match &self.shown {
             Shown::Code(editor) => editor.focus_handle(cx),
             _ => self.focus.clone(),
@@ -89,8 +91,14 @@ impl Focusable for Document {
 }
 
 impl Document {
-    /// Opens `path` in `place`, read at once and each second it shows.
-    pub fn new(path: PathBuf, place: Place, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    /// Opens `path` in `place`, read once it is visible and each second it stays so.
+    pub fn new(
+        path: PathBuf,
+        place: Place,
+        visible: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let kind = Kind::of(&path);
         log::info!(
             "docs: {} opens as {kind:?} in the {place:?}",
@@ -100,19 +108,8 @@ impl Document {
             let placeholder = text(cx, "et.doc.search", &[]);
             cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder))
         });
-        let polling = cx.spawn_in(window, async move |doc, cx| {
-            loop {
-                cx.background_executor().timer(POLL).await;
-                let ticked = doc.update_in(cx, |doc, window, cx| {
-                    if doc.visible {
-                        doc.check(window, cx);
-                    }
-                });
-                if ticked.is_err() {
-                    break;
-                }
-            }
-        });
+        // An image leaves the cache and the atlas with its document.
+        let released = cx.on_release(|doc, cx| doc.forget_image(cx));
         let mut doc = Self {
             path,
             kind,
@@ -123,14 +120,39 @@ impl Document {
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
             search,
-            visible: true,
+            visible: false,
             busy: false,
             version: 0,
-            _polling: polling,
+            polling: None,
             reading: Task::ready(()),
+            _released: released,
         };
-        doc.check(window, cx);
+        doc.set_visible(visible, window, cx);
         doc
+    }
+
+    /// Looks at the file each second while visible.
+    fn poll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.polling = Some(cx.spawn_in(window, async move |doc, cx| {
+            loop {
+                cx.background_executor().timer(POLL).await;
+                let ticked = doc.update_in(cx, |doc, window, cx| doc.check(window, cx));
+                if ticked.is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// Drops a shown image's decoded picture from the cache and every window's atlas, so it decodes afresh.
+    fn forget_image(&self, cx: &mut App) {
+        let Shown::Image(source) = &self.shown else {
+            return;
+        };
+        if let Some(Ok(image)) = cx.fetch_asset::<ImageAssetLoader>(source) {
+            cx.drop_image(image, None);
+        }
+        cx.remove_asset::<ImageAssetLoader>(source);
     }
 
     pub fn path(&self) -> &Path {
@@ -163,6 +185,9 @@ impl Document {
         self.visible = visible;
         if visible {
             self.check(window, cx);
+            self.poll(window, cx);
+        } else {
+            self.polling = None;
         }
     }
 
@@ -198,6 +223,8 @@ impl Document {
                 }
             }
             Found::Failed(why) => {
+                // Tried again at the next poll.
+                self.stamp = None;
                 if !matches!(&self.shown, Shown::Failed(was) if *was == why) {
                     log::error!("docs: {path} does not read: {why}");
                     self.shown = Shown::Failed(why);
@@ -213,7 +240,8 @@ impl Document {
                 } else {
                     log::debug!("docs: {path} changed; read again");
                 }
-                self.stamp = Some(stamp);
+                // A failed read is tried again at the next poll.
+                self.stamp = (!matches!(read, Read::Failed(_))).then_some(stamp);
                 self.version += 1;
                 self.show(read, window, cx);
                 cx.notify();
@@ -253,9 +281,9 @@ impl Document {
             },
             Read::Image => {
                 let source = Resource::Path(self.path.clone().into());
-                if matches!(&self.shown, Shown::Image(_)) {
-                    cx.remove_asset::<ImageAssetLoader>(&source);
-                }
+                // A picture cached before, here or by another view, decodes afresh.
+                self.forget_image(cx);
+                cx.remove_asset::<ImageAssetLoader>(&source);
                 Shown::Image(source)
             }
             Read::Binary => Shown::Binary,
@@ -264,7 +292,6 @@ impl Document {
                 log::error!("docs: {} does not read: {why}", self.path.display());
                 Shown::Failed(why)
             }
-            Read::Missing => unreachable!("a look turns a missing read into Gone"),
         };
     }
 }

@@ -28,7 +28,10 @@ pub fn link(base: &Path, href: &str) -> Link {
         return Link::External(href.to_string());
     }
     let local = match lower.strip_prefix("file://") {
-        Some(_) => &href["file://".len()..],
+        // An empty host or localhost is this machine; another host is not opened.
+        Some(rest) if rest.starts_with('/') => &href["file://".len()..],
+        Some(rest) if rest.starts_with("localhost/") => &href["file://localhost".len()..],
+        Some(_) => return Link::Bad,
         None if scheme(href) => return Link::Bad,
         None => href,
     };
@@ -36,6 +39,10 @@ pub fn link(base: &Path, href: &str) -> Link {
     let Some(decoded) = decode(local).filter(|path| !path.is_empty()) else {
         return Link::Bad;
     };
+    // A share's path would reach another machine.
+    if decoded.starts_with("//") || decoded.starts_with("\\\\") {
+        return Link::Bad;
+    }
     Link::Doc(normal(&base.join(decoded)))
 }
 

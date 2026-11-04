@@ -117,6 +117,13 @@ impl Files {
         &self.root
     }
 
+    /// The tree chooses nothing.
+    pub fn unchoose(&mut self, cx: &mut Context<Self>) {
+        if self.chosen.take().is_some() {
+            cx.notify();
+        }
+    }
+
     /// The tree chose `of`: a file previews.
     fn choose(&mut self, of: &SharedString, cx: &mut Context<Self>) {
         self.chosen = Some(of.clone());

@@ -45,6 +45,12 @@ impl Document {
         (name, cx.entity_id().as_u64() as usize).into()
     }
 
+    /// The image viewer's id, new at each read, so a failed decode is tried again.
+    fn image_id(&self, cx: &Context<Self>) -> ElementId {
+        let entity = cx.entity_id().as_u64();
+        ElementId::Name(format!("doc-image-{entity}-{}", self.version).into())
+    }
+
     /// Markdown in a scrolled column: links to files open as documents, web links in the browser.
     fn markdown(&self, body: &SharedString, cx: &mut Context<Self>) -> AnyElement {
         let base: Arc<Path> = self.path.parent().unwrap_or(Path::new("")).into();
@@ -55,6 +61,9 @@ impl Document {
                 Link::External(url) => {
                     log::info!("docs: a link opens {url}");
                     cx.open_url(&url);
+                }
+                Link::Doc(path) if path.is_dir() => {
+                    log::warn!("docs: a link to folder {} opens nothing", path.display())
                 }
                 Link::Doc(path) => {
                     log::info!("docs: a link opens {}", path.display());
@@ -128,7 +137,7 @@ impl Document {
             }
             Shown::Image(source) => div()
                 .size_full()
-                .child(ImageViewer::new(self.id("doc-image", cx), source.clone()))
+                .child(ImageViewer::new(self.image_id(cx), source.clone()))
                 .into_any_element(),
             Shown::Binary => {
                 let title = text(cx, "et.doc.binary", &[]);

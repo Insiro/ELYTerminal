@@ -35,12 +35,8 @@ impl Workspace {
         match woken.or_else(|| self.shown.get(&home).copied()) {
             Some(id) => self.show(id, window, cx),
             None => {
-                if let Some(session) = self.current().and_then(Tab::term) {
-                    let terminal = session.terminal.clone();
-                    terminal.update(cx, |view, cx| {
-                        view.let_go(cx);
-                        view.set_front(false, window);
-                    });
+                if let Some(tab) = self.current() {
+                    tab.hide(window, cx);
                 }
                 log::info!("app: home {home:?} selected");
                 self.selected = home;

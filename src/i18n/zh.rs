@@ -343,4 +343,5 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.files.preview", "预览"),
     ("et.files.open_tab", "在标签页中打开"),
     ("et.preview.close", "关闭预览"),
+    ("et.doc.bad_path", "非 UTF-8 的路径无法在标签页中打开"),
 ];

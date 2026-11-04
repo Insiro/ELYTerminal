@@ -42,27 +42,34 @@ impl Workspace {
         if (self.preview.as_ref()).is_some_and(|doc| doc.read(cx).path() == path) {
             return;
         }
-        let doc = cx.new(|cx| Document::new(path, Place::Panel, window, cx));
+        let visible = self.preview_visible(cx);
+        let doc = cx.new(|cx| Document::new(path, Place::Panel, visible, window, cx));
         self.follow_links(&doc, window, cx);
         self.preview = Some(doc);
-        self.sync_preview(window, cx);
         cx.notify();
     }
 
+    /// Closes the preview; the tree chooses nothing, so the same file previews again.
     fn close_preview(&mut self, cx: &mut Context<Self>) {
         if let Some(doc) = self.preview.take() {
             log::info!(
                 "app: the preview of {} closes",
                 doc.read(cx).path().display()
             );
+            self.files.update(cx, |files, cx| files.unchoose(cx));
             cx.notify();
         }
     }
 
+    /// Whether the right column shows Files.
+    fn preview_visible(&self, cx: &Context<Self>) -> bool {
+        let settings = SettingsStore::get(cx);
+        settings.show_panel && settings.panel == PanelTab::Files
+    }
+
     /// The preview polls only while the right column shows Files.
     pub(super) fn sync_preview(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let settings = SettingsStore::get(cx);
-        let visible = settings.show_panel && settings.panel == PanelTab::Files;
+        let visible = self.preview_visible(cx);
         if let Some(doc) = &self.preview {
             doc.update(cx, |doc, cx| doc.set_visible(visible, window, cx));
         }

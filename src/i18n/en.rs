@@ -376,4 +376,8 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.files.preview", "Preview"),
     ("et.files.open_tab", "Open as Tab"),
     ("et.preview.close", "Close preview"),
+    (
+        "et.doc.bad_path",
+        "A path not in UTF-8 cannot open as a tab",
+    ),
 ];

@@ -11,6 +11,7 @@ use gpui::{App, AppContext, ClipboardItem, Context, Entity, Window};
 
 use super::{
     Workspace,
+    projects::notice,
     tabs::{Body, Tab},
 };
 use crate::{
@@ -32,6 +33,13 @@ pub fn twin<'a>(
 impl Workspace {
     /// Shows `path` as a tab of the selected home: its tab there, else a new one after the shown tab.
     pub fn open_doc(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        // workspace.json keeps paths as text.
+        if path.to_str().is_none() {
+            log::error!("app: {} is not UTF-8; it opens as no tab", path.display());
+            let error = anyhow::anyhow!("{}", path.display());
+            notice("et.doc.bad_path", error, window, cx);
+            return;
+        }
         let home = self.selected.clone();
         let docs: Vec<(Home, PathBuf, TabId)> = self
             .tabs
@@ -70,11 +78,7 @@ impl Workspace {
         let id = TabId(self.next_tab);
         self.next_tab += 1;
         log::info!("app: tab {} opens {} in {home:?}", id.0, path.display());
-        let doc = cx.new(|cx| {
-            let mut doc = Document::new(path, Place::Tab, window, cx);
-            doc.set_visible(false, window, cx);
-            doc
-        });
+        let doc = cx.new(|cx| Document::new(path, Place::Tab, false, window, cx));
         self.follow_links(&doc, window, cx);
         self.tabs.push(Tab {
             id,

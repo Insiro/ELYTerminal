@@ -1,6 +1,11 @@
 //! A document's file read off the main thread, and the stamp that says it changed.
 
-use std::{fs, io, path::Path, time::SystemTime};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{self, Read as _},
+    path::Path,
+    time::SystemTime,
+};
 
 use super::kind::{Kind, binary};
 
@@ -33,16 +38,32 @@ pub enum Read {
     Binary,
     /// Its size, past its kind's limit.
     TooLarge(u64),
-    Missing,
+    /// It did not read, gone since its stamp among the reasons.
     Failed(String),
 }
 
-/// Reads `path` as `kind` shows it.
+/// Opens `path` without waiting on a pipe or device behind it.
+fn open(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    options.open(path)
+}
+
+/// Reads `path` as `kind` shows it, no more than its limit and one byte.
 pub fn read(path: &Path, kind: Kind) -> Read {
-    let meta = match fs::metadata(path) {
+    let failed = |error: io::Error| Read::Failed(error.to_string());
+    let file = match open(path) {
+        Ok(file) => file,
+        Err(error) => return failed(error),
+    };
+    let meta = match file.metadata() {
         Ok(meta) => meta,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Read::Missing,
-        Err(error) => return Read::Failed(error.to_string()),
+        Err(error) => return failed(error),
     };
     if !meta.is_file() {
         return Read::Failed(format!("{} is not a file", path.display()));
@@ -53,11 +74,10 @@ pub fn read(path: &Path, kind: Kind) -> Read {
     if kind == Kind::Image {
         return Read::Image;
     }
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Read::Missing,
-        Err(error) => return Read::Failed(error.to_string()),
-    };
+    let mut bytes = Vec::new();
+    if let Err(error) = file.take(kind.max() + 1).read_to_end(&mut bytes) {
+        return failed(error);
+    }
     // It may have grown since its metadata read.
     if bytes.len() as u64 > kind.max() {
         return Read::TooLarge(bytes.len() as u64);
@@ -83,9 +103,6 @@ pub fn look(path: &Path, kind: Kind, known: Option<Stamp>) -> Found {
         Err(error) => Found::Failed(error.to_string()),
         Ok(None) => Found::Gone,
         Ok(Some(now)) if Some(now) == known => Found::Same,
-        Ok(Some(now)) => match read(path, kind) {
-            Read::Missing => Found::Gone,
-            read => Found::Changed(now, read),
-        },
+        Ok(Some(now)) => Found::Changed(now, read(path, kind)),
     }
 }
