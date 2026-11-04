@@ -1,8 +1,7 @@
 use std::{
     fs,
-    io::{ErrorKind, Write},
+    io::ErrorKind,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use anyhow::Context as _;
@@ -111,52 +110,14 @@ pub fn load(path: &Path) -> anyhow::Result<Settings> {
     Ok(settings)
 }
 
-/// Writes a temp file beside `path`, then renames it over `path`.
+/// Writes the settings through a temp file renamed over `path`.
 pub fn save(path: &Path, settings: &Settings) -> anyhow::Result<()> {
-    let folder = path
-        .parent()
-        .with_context(|| format!("settings: {} has no folder", path.display()))?;
-    fs::create_dir_all(folder)
-        .with_context(|| format!("settings: cannot create {}", folder.display()))?;
     let mut text = serde_json::to_string_pretty(settings).context("settings: cannot encode")?;
     text.push('\n');
-    let count = SAVES.fetch_add(1, Ordering::Relaxed);
-    let temp = path.with_extension(format!("json.{}-{count}.tmp", std::process::id()));
-    let written = write_new(&temp, &text).and_then(|()| {
-        fs::rename(&temp, path).with_context(|| {
-            format!(
-                "settings: cannot rename {} over {}",
-                temp.display(),
-                path.display()
-            )
-        })
-    });
-    if let Err(error) = written {
-        if temp.exists()
-            && let Err(left) = fs::remove_file(&temp)
-        {
-            log::error!("settings: {} stays behind: {left}", temp.display());
-        }
-        return Err(error);
-    }
+    crate::atomic::write(path, &text, "settings")?;
     log::info!("settings: saved {}", path.display());
     Ok(())
 }
-
-/// Creates new `temp` and writes `text` to the disk.
-fn write_new(temp: &Path, text: &str) -> anyhow::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temp)
-        .with_context(|| format!("settings: cannot create {}", temp.display()))?;
-    file.write_all(text.as_bytes())
-        .and_then(|()| file.sync_all())
-        .with_context(|| format!("settings: cannot write {}", temp.display()))
-}
-
-/// Saves made by this process, so each temp file has its own name.
-static SAVES: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests {

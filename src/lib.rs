@@ -1,4 +1,5 @@
 pub mod app;
+pub mod atomic;
 pub mod blur;
 #[cfg(windows)]
 pub mod explorer;
@@ -9,6 +10,7 @@ pub mod interface;
 pub mod menus;
 pub mod pet;
 pub mod profiles;
+pub mod projects;
 pub mod sessions;
 pub mod settings;
 pub mod term;

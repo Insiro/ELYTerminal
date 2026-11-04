@@ -13,10 +13,12 @@ use ely_gpui_component::{
 
 mod diff;
 pub mod panel;
+mod worktree;
 #[cfg(any(windows, test))]
 pub(crate) mod wsl;
 
 pub use diff::diff;
+pub use worktree::{Worktree, worktrees};
 
 /// Git's arguments on one line, for messages.
 fn line<A: AsRef<OsStr>>(args: &[A]) -> String {

@@ -445,3 +445,4 @@ fn a_discard_restores_edits_and_deletes_new_files() {
 }
 
 mod diffs;
+mod worktrees;
