@@ -333,4 +333,11 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.clipboard.deny", "拒绝"),
     ("et.clipboard.always", "本会话内允许"),
     ("et.clipboard.allow", "允许"),
+    ("et.doc.search", "搜索"),
+    ("et.doc.open_system", "用系统应用打开"),
+    ("et.doc.open_browser", "在浏览器中打开"),
+    ("et.doc.binary", "此文件是二进制文件或非 UTF-8 文本"),
+    ("et.doc.too_large", "此文件过大，无法显示（{size}）"),
+    ("et.doc.failed", "此文件无法读取：{why}"),
+    ("et.doc.missing", "文件已不存在；显示的是最后一次读取的内容"),
 ];

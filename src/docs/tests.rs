@@ -6,7 +6,7 @@ use std::{
 use super::{
     kind::{Kind, TEXT_MAX, binary, language},
     links::{Link, link},
-    read::{Read, read, stamp},
+    read::{Found, Read, look, read, stamp},
 };
 
 /// A fresh folder under the temp dir.
@@ -147,4 +147,25 @@ fn links_lead_out_to_a_doc_or_to_a_heading() {
     for (href, expected) in cases {
         assert_eq!(link(base, href), expected, "{href:?}");
     }
+}
+
+#[test]
+fn a_look_reads_only_a_changed_stamp() {
+    let root = folder("look");
+    let path = root.join("a.json");
+    assert_eq!(look(&path, Kind::Json, None), Found::Gone);
+    fs::write(&path, "{}").expect("a file");
+    let Found::Changed(first, Read::Text(text)) = look(&path, Kind::Json, None) else {
+        panic!("a new file reads");
+    };
+    assert_eq!(text, "{}");
+    assert_eq!(look(&path, Kind::Json, Some(first)), Found::Same);
+    fs::write(&path, "[1, 2]").expect("a file");
+    assert!(matches!(
+        look(&path, Kind::Json, Some(first)),
+        Found::Changed(_, Read::Text(_))
+    ));
+    fs::remove_file(&path).expect("gone");
+    assert_eq!(look(&path, Kind::Json, Some(first)), Found::Gone);
+    fs::remove_dir_all(&root).ok();
 }

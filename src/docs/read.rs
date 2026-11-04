@@ -67,3 +67,25 @@ pub fn read(path: &Path, kind: Kind) -> Read {
     }
     String::from_utf8(bytes).map_or(Read::Binary, Read::Text)
 }
+
+/// What a poll found, against the stamp last read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Found {
+    Same,
+    Gone,
+    Changed(Stamp, Read),
+    Failed(String),
+}
+
+/// Reads `path` again only when its stamp is not `known`.
+pub fn look(path: &Path, kind: Kind, known: Option<Stamp>) -> Found {
+    match stamp(path) {
+        Err(error) => Found::Failed(error.to_string()),
+        Ok(None) => Found::Gone,
+        Ok(Some(now)) if Some(now) == known => Found::Same,
+        Ok(Some(now)) => match read(path, kind) {
+            Read::Missing => Found::Gone,
+            read => Found::Changed(now, read),
+        },
+    }
+}

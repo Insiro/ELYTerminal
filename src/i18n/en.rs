@@ -363,4 +363,14 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.clipboard.deny", "Deny"),
     ("et.clipboard.always", "Allow for this session"),
     ("et.clipboard.allow", "Allow"),
+    ("et.doc.search", "Search"),
+    ("et.doc.open_system", "Open with System App"),
+    ("et.doc.open_browser", "Open in Browser"),
+    ("et.doc.binary", "This file is binary or not UTF-8 text"),
+    (
+        "et.doc.too_large",
+        "This file is too large to show ({size})",
+    ),
+    ("et.doc.failed", "This file does not read: {why}"),
+    ("et.doc.missing", "The file is gone; this is its last read"),
 ];
