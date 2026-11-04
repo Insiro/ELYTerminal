@@ -46,10 +46,10 @@ function global:ElyClaude {
     $id = $ask -creplace '^[^:]*:', ''
     $why = if (-not $word -or $id -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
         'ELY_CLAUDE names no Claude session'
-    } elseif (-not (Test-Path Function:\PSConsoleHostReadLine)) { 'PSReadLine is not loaded' }
+    } elseif (-not (Get-Variable ElyReadLine -Scope Global -ErrorAction Ignore)) { 'PSReadLine is not loaded' }
     if ($why) {
         [Console]::Error.WriteLine("ELYTerminal: $why, so claude does not start")
-        [Console]::Write("$([char]27)]133;D$([char]7)")
+        [Console]::Write("$([char]27)]133;D;aid=elyterminal$([char]7)")
         return
     }
     $global:ElyClaudeLine = if ($prelude) { "$prelude`nclaude $word $id" } else { "claude $word $id" }

@@ -31,6 +31,11 @@ impl TerminalView {
         })
     }
 
+    /// Writes `bytes` to the program as typed.
+    pub fn type_bytes(&self, bytes: &[u8]) {
+        self.pty.write(bytes.to_vec());
+    }
+
     /// Whether it hands its marks on, while a Claude tab watches them.
     pub fn watch_marks(&mut self, on: bool) {
         self.watched = on;
@@ -74,6 +79,7 @@ impl TerminalView {
                     }
                 }
                 PtyEvent::Mark(Mark::Input, _) => self.shell = self.shell.reads(),
+                PtyEvent::Mark(Mark::Unstarted, _) => {}
                 PtyEvent::Status(status, owner) => {
                     self.status(status, owner);
                     self.restate(cx);
@@ -155,5 +161,6 @@ fn heard(mark: &Mark) -> Heard {
         Mark::Input => Heard::Input,
         Mark::Output => Heard::Output,
         Mark::Done(status) => Heard::Done(*status),
+        Mark::Unstarted => Heard::Unstarted,
     }
 }

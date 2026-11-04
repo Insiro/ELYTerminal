@@ -20,6 +20,7 @@ if [[ -o interactive ]]; then
       builtin printf '\e]133;D;%s\a' $ret
       _ely_ran=
     fi
+    _ely_cl_now=
     if [[ -n ${ELY_WSL-} ]]; then
       # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
       dir=${"$(wslpath -w $PWD 2>/dev/null)"//\\//}
@@ -82,10 +83,10 @@ if [[ -o interactive ]]; then
     # A bare D before the prompt tells the terminal Claude does not start.
     if [[ -z $word || ! $id =~ $re ]]; then
       builtin print -ru2 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start'
-      builtin printf '\e]133;D\a'
+      builtin printf '\e]133;D;aid=elyterminal\a'
     elif [[ ! -o zle ]]; then
       builtin print -ru2 'ELYTerminal: claude does not start while zle is off'
-      builtin printf '\e]133;D\a'
+      builtin printf '\e]133;D;aid=elyterminal\a'
     else
       _ely_cl_line="claude $word $id"
       [[ -n $_ely_cl_pre ]] && _ely_cl_line=$_ely_cl_pre$'\n'$_ely_cl_line
@@ -94,7 +95,9 @@ if [[ -o interactive ]]; then
     fi
     _ely_cl_pre=
   }
+  # Once; add-zle-hook-widget runs it after the hooks before it, and a failing one before it stops it, as zsh runs them.
   _ely_claude_line() {
+    add-zle-hook-widget -d zle-line-init _ely_claude_line
     [[ -n $_ely_cl_line ]] || builtin return 0
     BUFFER=$_ely_cl_line
     _ely_cl_line=

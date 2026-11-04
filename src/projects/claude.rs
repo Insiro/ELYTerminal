@@ -79,6 +79,18 @@ pub fn env(id: &str, mode: Mode) -> String {
     format!("{word}:{id}")
 }
 
+/// The key fish binds to Claude's line at its first prompt, a private-use character no keyboard types.
+pub const KEY: &str = "\u{e000}";
+
+/// How long a wake waits for the transcript search.
+const SEARCH: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// The status a shell gives a job it suspended, 128 and SIGTSTP; Claude runs on.
+#[cfg(unix)]
+const SUSPENDED: Option<i32> = Some(128 + libc::SIGTSTP);
+#[cfg(not(unix))]
+const SUSPENDED: Option<i32> = None;
+
 /// The mode a restored tab takes from its transcript's search: resume unless surely absent.
 pub fn mode(found: Option<bool>) -> Mode {
     match found {
@@ -119,6 +131,16 @@ impl Modes {
 
     /// The mode `id` restores in; Resume while the search runs or when it was not looked for.
     pub fn of(&mut self, id: &str) -> Mode {
+        // The search reads a folder or two: waiting a little for it beats resuming a session never written.
+        let since = std::time::Instant::now();
+        while self
+            .finding
+            .as_ref()
+            .is_some_and(|finding| !finding.is_finished())
+            && since.elapsed() < SEARCH
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         if self
             .finding
             .as_ref()
@@ -147,6 +169,8 @@ pub enum Heard {
     Input,
     Output,
     Done(Option<i32>),
+    /// The integration's word that Claude does not start: D with `aid=elyterminal` and no status.
+    Unstarted,
 }
 
 /// How Claude's watch ended.
@@ -165,6 +189,8 @@ pub enum Watch {
     Starting,
     /// A prompt started; a command now, before any input, is Claude's.
     Prompted,
+    /// A prompt read input; Claude's command is still to come.
+    Typed,
     Running,
     Off,
     /// cmd marks no command, so Claude's end goes unheard.
@@ -175,20 +201,22 @@ impl Watch {
     /// Hears `mark`; how the watch ended, once it does.
     pub fn hear(&mut self, mark: Heard) -> Option<End> {
         let end = match (*self, mark) {
-            (Self::Starting | Self::Prompted, Heard::Prompt) => {
+            (Self::Starting | Self::Prompted | Self::Typed, Heard::Prompt) => {
                 *self = Self::Prompted;
                 None
             }
             (Self::Prompted, Heard::Input) => {
-                *self = Self::Starting;
+                *self = Self::Typed;
                 None
             }
             (Self::Prompted, Heard::Output) => {
                 *self = Self::Running;
                 None
             }
-            (Self::Starting | Self::Prompted, Heard::Done(None)) => Some(End::Skipped),
-            (Self::Running, Heard::Done(Some(_))) => Some(End::Exited),
+            (Self::Starting | Self::Prompted | Self::Typed, Heard::Unstarted) => Some(End::Skipped),
+            (Self::Running, Heard::Done(status)) if status.is_some() && status != SUSPENDED => {
+                Some(End::Exited)
+            }
             _ => None,
         };
         if end.is_some() {
@@ -199,12 +227,17 @@ impl Watch {
 
     /// Whether Claude's command has yet to start.
     pub fn waiting(self) -> bool {
-        matches!(self, Self::Starting | Self::Prompted)
+        matches!(self, Self::Starting | Self::Prompted | Self::Typed)
+    }
+
+    /// Whether a prompt has started since the shell did.
+    pub fn prompted(self) -> bool {
+        !matches!(self, Self::Starting)
     }
 
     /// Whether marks still matter to it.
     pub fn listening(self) -> bool {
-        matches!(self, Self::Starting | Self::Prompted | Self::Running)
+        self.waiting() || self == Self::Running
     }
 }
 

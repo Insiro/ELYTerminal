@@ -67,40 +67,45 @@ _ely_prompt() {
   builtin printf '\e]2;%s\a' "${title//[[:cntrl:]]/}"
   builtin return $ret
 }
-# Claude as a marked command of its own, once, after every other prompt command; no eval of its id.
+# Claude as a marked command of its own, once, after every other prompt command; no eval of its id. Locals are _ely_c_, clear of the prelude's names.
 _ely_claude() {
-  builtin local word= id=${_ely_cl_ask#*:} line= ret old errexit= re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  builtin local _ely_c_word= _ely_c_id=${_ely_cl_ask#*:} _ely_c_line= _ely_c_ret _ely_c_old _ely_c_errexit=
+  builtin local _ely_c_re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   case ${_ely_cl_ask%%:*} in
-    new) word=--session-id ;;
-    resume) word=--resume ;;
+    new) _ely_c_word=--session-id ;;
+    resume) _ely_c_word=--resume ;;
   esac
-  line="claude $word $id"
-  [ -n "$_ely_cl_pre" ] && line=$_ely_cl_pre$'\n'$line
+  _ely_c_line="claude $_ely_c_word $_ely_c_id"
+  [ -n "$_ely_cl_pre" ] && _ely_c_line=$_ely_cl_pre$'\n'$_ely_c_line
   _ely_cl_ask= _ely_cl_pre=
-  # A bare D before the prompt tells the terminal Claude does not start.
-  if [ -z "$word" ] || ! [[ $id =~ $re ]]; then
+  # D with our name and no status tells the terminal Claude does not start.
+  if [ -z "$_ely_c_word" ] || ! [[ $_ely_c_id =~ $_ely_c_re ]]; then
     builtin printf 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start\n' >&2
-    builtin printf '\e]133;D\a'
+    builtin printf '\e]133;D;aid=elyterminal\a'
     builtin return 0
   fi
   if ! [ -t 0 ] || ! [ -t 1 ]; then
     builtin printf 'ELYTerminal: claude needs the terminal, so it does not start\n' >&2
-    builtin printf '\e]133;D\a'
+    builtin printf '\e]133;D;aid=elyterminal\a'
     builtin return 0
   fi
-  builtin history -s "$line"
-  [[ $- == *e* ]] && errexit=1 && builtin set +e
+  builtin history -s "$_ely_c_line"
+  [[ $- == *e* ]] && _ely_c_errexit=1 && builtin set +e
   # Ctrl-C ends claude, not the prompt command, so its end is marked.
-  old=$(builtin trap -p INT)
+  _ely_c_old=$(builtin trap -p INT)
   builtin trap : INT
   builtin printf '\e]133;A;aid=elyterminal\a\e]133;C\a\e]2;claude\a'
-  builtin eval "$line"
-  ret=$?
-  builtin printf '\e]133;D;%s\a' "$ret"
+  # In a function of its own, so a return in the prelude still leaves the end marked.
+  _ely_c_run "$_ely_c_line"
+  _ely_c_ret=$?
+  builtin printf '\e]133;D;%s\a' "$_ely_c_ret"
   builtin trap - INT
-  [ -n "$old" ] && builtin eval "$old"
-  [ -n "$errexit" ] && builtin set -e
+  [ -n "$_ely_c_old" ] && builtin eval "$_ely_c_old"
+  [ -n "$_ely_c_errexit" ] && builtin set -e
   builtin return 0
+}
+_ely_c_run() {
+  builtin eval "$1"
 }
 # Last, after anything that sets PS1 or PS0.
 _ely_mark() {
@@ -117,6 +122,12 @@ _ely_mark() {
   fi
   if [ -n "$_ely_cl_ask" ]; then _ely_claude; fi
 }
-PROMPT_COMMAND="_ely_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND};_ely_mark"
+# bash 5.1 runs each element of an array PROMPT_COMMAND: ours lead it and end it.
+if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 501 )) && [[ $(builtin declare -p PROMPT_COMMAND 2>/dev/null) == "declare -"*a*" PROMPT_COMMAND"* ]]; then
+  PROMPT_COMMAND[0]="_ely_prompt${PROMPT_COMMAND[0]:+;${PROMPT_COMMAND[0]}}"
+  PROMPT_COMMAND+=(_ely_mark)
+else
+  PROMPT_COMMAND="_ely_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND};_ely_mark"
+fi
 # PS0 and the prompt mark a command only through expansions, which promptvars turns on.
 builtin shopt -q promptvars || builtin printf 'ELYTerminal: bash marks no command while promptvars is off (shopt -s promptvars)\n' >&2

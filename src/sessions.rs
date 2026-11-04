@@ -35,6 +35,8 @@ pub struct Session {
     pub claude: Option<String>,
     /// Follows Claude's command, to drop its id once it ends.
     pub watch: crate::projects::claude::Watch,
+    /// fish waits for Claude's key once its first prompt reads.
+    pub keyed: bool,
     /// The program it runs, as its path; empty for the login shell.
     pub shell: String,
     /// The arguments its profile gave the program.

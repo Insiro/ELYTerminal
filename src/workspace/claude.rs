@@ -9,32 +9,42 @@ use super::{Workspace, dialogs::Asking, projects::notice};
 use crate::{
     projects::{
         Home, TabId,
-        claude::{self, End, Heard, Mode, Watch},
+        claude::{self, End, Heard, KEY, Mode, Watch},
     },
     settings::SettingsStore,
     term::{Launch, shell},
 };
 
-/// How long a Claude tab waits for Claude's command to start.
+/// How long a Claude tab waits, from its first prompt, for Claude's command to start.
 const START: Duration = Duration::from_secs(20);
 
-/// Hands `launch`'s shell Claude's id and the prelude; refuses a shell whose integration cannot start it. False when no mark tells Claude's end.
+/// How a Claude tab hears Claude.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Hearing {
+    /// cmd marks no command, so Claude's end goes unheard.
+    Blind,
+    Marks,
+    /// fish runs Claude's line at `KEY`, sent once its first prompt reads, so it waits for fish's own questions to the terminal.
+    Key,
+}
+
+/// Hands `launch`'s shell Claude's id and the prelude; refuses a shell whose integration cannot start it.
 pub(super) fn ready(
     launch: &mut Launch,
     id: &str,
     mode: Mode,
     prelude: &str,
     cx: &App,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<Hearing> {
     anyhow::ensure!(claude::valid(id), "claude: {id:?} is no session id");
+    let program = match &launch.program {
+        Some((program, _)) => program.clone(),
+        None => shell::default_shell()?,
+    };
+    let name = Path::new(&program)
+        .file_name()
+        .map_or(program.clone(), |name| name.to_string_lossy().into_owned());
     if !launch.reports {
-        let program = match &launch.program {
-            Some((program, _)) => program.clone(),
-            None => shell::default_shell()?,
-        };
-        let name = Path::new(&program)
-            .file_name()
-            .map_or(program.clone(), |name| name.to_string_lossy().into_owned());
         let why = text(cx, "et.claude.unsupported", &[("shell", &name)]);
         anyhow::bail!("{why}");
     }
@@ -63,9 +73,12 @@ pub(super) fn ready(
         if let Some((_, args)) = launch.program.as_mut() {
             *args = vec!["/k".into(), command];
         }
-        return Ok(false);
+        return Ok(Hearing::Blind);
     }
-    Ok(true)
+    let fish = Path::new(&name)
+        .file_stem()
+        .is_some_and(|stem| stem == "fish");
+    Ok(if fish { Hearing::Key } else { Hearing::Marks })
 }
 
 impl Workspace {
@@ -114,13 +127,29 @@ impl Workspace {
     }
 
     /// Tab `index`'s terminal heard `mark`; Claude's end, or word that it does not start, drops its id, so the tab is a shell again.
-    pub(super) fn claude_marked(&mut self, index: usize, mark: Heard, cx: &mut Context<Self>) {
+    pub(super) fn claude_marked(
+        &mut self,
+        index: usize,
+        mark: Heard,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let tab = self.tabs[index].id;
         let session = self.tabs[index].session_mut();
-        if session.claude.is_none() {
+        let Some(claude) = session.claude.clone() else {
             return;
+        };
+        let before = session.watch;
+        let end = session.watch.hear(mark);
+        if mark == Heard::Input && std::mem::take(&mut session.keyed) {
+            log::info!("app: tab {}'s fish reads; Claude's key goes", tab.0);
+            let terminal = session.terminal.clone();
+            terminal.update(cx, |view, _| view.type_bytes(KEY.as_bytes()));
         }
-        match session.watch.hear(mark) {
+        if !before.prompted() && self.tabs[index].session().watch.prompted() {
+            self.time_claude((tab, claude), window, cx);
+        }
+        match end {
             Some(End::Exited) => log::info!("app: Claude in tab {} ended, {mark:?}", tab.0),
             Some(End::Skipped) => log::warn!("app: Claude in tab {} did not start", tab.0),
             None => return,
@@ -142,29 +171,36 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Tab `id` runs Claude `claude`, its end heard while `watched`; a command that has not started in 20 s is told and forgotten.
+    /// Tab `id` runs Claude `claude`, heard as `hearing` says.
     pub(super) fn watch_claude(
         &mut self,
         (id, claude): (TabId, String),
-        watched: bool,
-        window: &mut Window,
+        hearing: Hearing,
         cx: &mut Context<Self>,
     ) {
         let Some(index) = self.index(id) else {
             return;
         };
         let session = self.tabs[index].session_mut();
-        session.claude = Some(claude.clone());
+        session.claude = Some(claude);
+        let watched = hearing != Hearing::Blind;
         session.watch = if watched {
             Watch::Starting
         } else {
             Watch::Blind
         };
+        session.keyed = hearing == Hearing::Key;
         let terminal = session.terminal.clone();
         terminal.update(cx, |view, _| view.watch_marks(watched));
-        if !watched {
-            return;
-        }
+    }
+
+    /// Tells and forgets Claude `claude` of tab `id` if its command has not started 20 s after the shell's first prompt: a slow rc or a cold WSL counts not.
+    fn time_claude(
+        &mut self,
+        (id, claude): (TabId, String),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(START).await;
             let _ = this.update_in(cx, |this, window, cx| {

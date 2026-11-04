@@ -9,6 +9,8 @@ pub enum Mark {
     Output,
     /// The command ended, with the status it gave: D.
     Done(Option<i32>),
+    /// Our integration's word that the command it was asked to run does not start: D, `aid=elyterminal` and no status.
+    Unstarted,
 }
 
 /// How the line a prompt reads takes a click, as its start's `click_events` says.
@@ -41,6 +43,7 @@ pub(crate) fn read(body: &[u8]) -> Option<Mark> {
         b'A' | b'N' => Some(Mark::Prompt(click(options))),
         b'B' | b'I' => Some(Mark::Input),
         b'C' => Some(Mark::Output),
+        b'D' if status(options).is_none() && ours(options) => Some(Mark::Unstarted),
         b'D' => Some(Mark::Done(status(options))),
         // L's fresh line needs the cursor, unseen before the parser; P adds nothing to A.
         b'L' | b'P' => {
@@ -52,6 +55,13 @@ pub(crate) fn read(body: &[u8]) -> Option<Mark> {
             None
         }
     }
+}
+
+/// Whether `options` name our integration.
+fn ours(options: &[u8]) -> bool {
+    options
+        .split(|&byte| byte == b';')
+        .any(|option| option == b"aid=elyterminal")
 }
 
 /// Whether an A or N body names our integration, `aid=elyterminal`.
@@ -138,6 +148,9 @@ mod tests {
         assert_eq!(read(b"D"), Some(Mark::Done(None)));
         assert_eq!(read(b"D;"), Some(Mark::Done(None)));
         assert_eq!(read(b"D;abc"), Some(Mark::Done(None)));
+        assert_eq!(read(b"D;aid=elyterminal"), Some(Mark::Unstarted));
+        assert_eq!(read(b"D;0;aid=elyterminal"), Some(Mark::Done(Some(0))));
+        assert_eq!(read(b"D;aid=other"), Some(Mark::Done(None)));
     }
 
     #[test]

@@ -52,6 +52,7 @@ fn watched(marks: &[Mark]) -> Vec<(End, Heard)> {
         Mark::Input => Heard::Input,
         Mark::Output => Heard::Output,
         Mark::Done(status) => Heard::Done(*status),
+        Mark::Unstarted => Heard::Unstarted,
     });
     heard
         .filter_map(|mark| watch.hear(mark).map(|end| (end, mark)))
@@ -69,12 +70,19 @@ fn runs_once(shell: &str, mode: session::Mode, files: &[(&str, &str)], ahead: bo
     if ahead {
         run.pty.write(b"echo AHE''AD\r".to_vec());
     }
+    // fish runs Claude's line at the key the app sends once its first prompt reads.
+    if shell.ends_with("fish") {
+        run.until("the first prompt's input", |run| {
+            run.marks.contains(&Mark::Input)
+        });
+        run.pty.write(session::KEY.as_bytes().to_vec());
+    }
     let read = |log: &Path| fs::read_to_string(log).unwrap_or_default();
     run.until("claude's end", |run| {
         run.marks.contains(&Mark::Done(Some(3))) || run.marks.contains(&Mark::Done(Some(9)))
     });
     if ahead {
-        // A line typed before the prompt runs after Claude; PowerShell reads its Enter, a newline then, as a key of the line.
+        // The fake reads no keys, so the line runs after it, a real claude takes them; PowerShell reads its Enter as a newline in the line.
         run.until("the line typed ahead", |run| run.shows("AHE''AD"));
         if !run.shows("\nAHEAD") {
             run.send("");
@@ -105,7 +113,7 @@ fn refuses(shell: &str) {
         !watched(&run.marks).is_empty()
     });
     assert!(!log.exists(), "{shell} ran something");
-    let skipped = (End::Skipped, Heard::Done(None));
+    let skipped = (End::Skipped, Heard::Unstarted);
     assert_eq!(watched(&run.marks), [skipped], "{shell}: {:?}", run.marks);
     run.finish();
     fs::remove_dir_all(bin).expect("cleanup");
@@ -147,4 +155,36 @@ fn pwsh_runs_claude_once() {
     )];
     runs_once(&pwsh, session::Mode::Resume, &slow, true);
     refuses(&pwsh);
+}
+
+#[test]
+fn bash_runs_claude_after_an_array_prompt_command() {
+    let bash = installed("bash");
+    let rc = "ua() { echo ua >> \"$ELY_TEST_LOG\"; }\nub() { echo ub >> \"$ELY_TEST_LOG\"; }\nPROMPT_COMMAND=(ua ub)\n";
+    let id = session::new_id();
+    let ask = session::env(&id, session::Mode::New);
+    let (mut run, bin, log) = start(&bash, &ask, &[(".bashrc", rc), (".bash_profile", rc)]);
+    run.until("claude's end", |run| {
+        run.marks.contains(&Mark::Done(Some(3)))
+    });
+    run.send("echo AF''TER");
+    run.until("the next command", |run| run.shows("\nAFTER"));
+    // bash 5.1 runs every element, ours last; older ones run the first alone.
+    let version = std::process::Command::new(&bash)
+        .args(["-c", "echo $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1]))"])
+        .output()
+        .expect("bash runs");
+    let arrays = String::from_utf8_lossy(&version.stdout)
+        .trim()
+        .parse::<u32>()
+        .expect("a version")
+        >= 501;
+    let before = if arrays { "ua\nub\n" } else { "ua\n" };
+    let text = fs::read_to_string(&log).expect("the log");
+    let first =
+        format!("{before}pre\nclaude --session-id {id} tty yes yes\nenv unset|unset\n{before}");
+    assert!(text.starts_with(&first), "{text}");
+    assert_eq!(text.matches("claude ").count(), 1, "{text}");
+    run.finish();
+    fs::remove_dir_all(bin).expect("cleanup");
 }

@@ -260,10 +260,22 @@ fn claude_s_exit_is_the_end_of_the_command_a_prompt_start_leads_into() {
     // A start with no status leaves Claude running.
     let (none, watch) = ends(&[Prompt, Output, Done(None)]);
     assert!(none.is_empty() && watch == Watch::Running);
-    // A bare D before Claude's command: it does not start.
+    // The integration's D before Claude's command: it does not start; another's bare D is no word of it.
     let skipped = (vec![End::Skipped], Watch::Off);
-    assert_eq!(ends(&[Done(None), Prompt, Output, Done(Some(0))]), skipped);
-    assert_eq!(ends(&[Prompt, Input, Done(None)]), skipped);
+    assert_eq!(ends(&[Unstarted, Prompt, Output, Done(Some(0))]), skipped);
+    assert_eq!(ends(&[Prompt, Input, Unstarted]), skipped);
+    assert_eq!(ends(&[Done(None), Prompt, Output, Done(Some(0))]), exited);
+    // A suspended Claude runs on.
+    #[cfg(unix)]
+    {
+        let suspended = Done(Some(128 + libc::SIGTSTP));
+        assert_eq!(ends(&[Prompt, Output, suspended, Done(Some(0))]), exited);
+    }
+    // The timer arms at the first prompt, not before.
+    let (_, watch) = ends(&[Output, Done(Some(0))]);
+    assert!(!watch.prompted());
+    let (_, watch) = ends(&[Prompt, Input]);
+    assert!(watch.prompted() && watch.waiting());
     // Once only.
     assert_eq!(
         ends(&[Prompt, Output, Done(Some(0)), Prompt, Output, Done(Some(0))]),

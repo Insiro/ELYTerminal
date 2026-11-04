@@ -65,13 +65,28 @@ fn a_mark_becomes_its_prompt_s_numbered_link() {
 #[test]
 fn the_rewrite_reads_a_mark_as_the_session_hears_it() {
     let bodies = [
-        "A", "A;k=i", "N", "B", "I", "C;x", "D;1", "D;abc", "D", "", "AB", "L", "P;k=i", "Q", "a",
+        "A",
+        "A;k=i",
+        "N",
+        "B",
+        "I",
+        "C;x",
+        "D;1",
+        "D;abc",
+        "D",
+        "D;aid=elyterminal",
+        "",
+        "AB",
+        "L",
+        "P;k=i",
+        "Q",
+        "a",
     ];
     for body in bodies {
         let heard = marks::read(body.as_bytes()).map(|mark| match mark {
             Mark::Prompt(_) => Edge::Prompt,
             Mark::Input => Edge::Input,
-            Mark::Output | Mark::Done(_) => Edge::End,
+            Mark::Output | Mark::Done(_) | Mark::Unstarted => Edge::End,
         });
         assert_eq!(mark(body.as_bytes()), heard, "{body}");
     }

@@ -321,7 +321,7 @@ impl Records {
                     before - self.list.len()
                 );
             }
-            Mark::Input => {}
+            Mark::Input | Mark::Unstarted => {}
         }
     }
 

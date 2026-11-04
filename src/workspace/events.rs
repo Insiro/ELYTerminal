@@ -16,7 +16,7 @@ impl Workspace {
             return;
         };
         if let TerminalEvent::Marked(mark) = event {
-            self.claude_marked(index, *mark, cx);
+            self.claude_marked(index, *mark, window, cx);
             return;
         }
         let tab = self.tabs[index].id;

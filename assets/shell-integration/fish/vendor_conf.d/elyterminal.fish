@@ -30,20 +30,22 @@ if status is-interactive
             # A bare D before the prompt tells the terminal Claude does not start.
             if test -z "$word"; or not string match -qr '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -- $id
                 echo 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start' >&2
-                printf '\e]133;D\a'
+                printf '\e]133;D;aid=elyterminal\a'
                 return
             end
             set -g _ely_cl_line $line
-            # fish asks the terminal at each prompt, and a line run before the answer is read leaves the question open, which aborts fish; so the line waits a moment.
-            function _ely_claude_go --on-signal SIGUSR1
+            # The terminal sends this key once the prompt reads: fish holds keys while it waits on its own questions to the terminal, where a line run at once aborted fish.
+            function _ely_claude_go
+                bind -e \ue000
+                bind -M insert -e \ue000
                 functions -e _ely_claude_go
                 commandline -r -- $_ely_cl_line
                 set -g _ely_cl_ran $_ely_cl_line
                 set -e _ely_cl_line
                 commandline -f execute
             end
-            command sh -c "sleep 0.3; kill -USR1 $fish_pid" >/dev/null 2>&1 &
-            disown
+            bind \ue000 _ely_claude_go
+            bind -M insert \ue000 _ely_claude_go
             # Claude's command starts right after a prompt start of its own, which tells it from a line typed ahead.
             function _ely_claude_mark --on-event fish_preexec
                 set -q _ely_cl_ran; and test "$argv" = "$_ely_cl_ran"; or return
