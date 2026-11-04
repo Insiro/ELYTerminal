@@ -100,6 +100,30 @@ fn a_broken_file_moves_aside() {
         "ws-relative",
         &json(|state| state.projects[0].folder = "p/app".into()),
     );
+    corrupt(
+        "ws-relative-doc",
+        &json(|state| {
+            state.others.tabs = vec![SavedTab::Doc {
+                path: "docs/README.md".into(),
+            }]
+        }),
+    );
+}
+
+#[test]
+fn terminal_and_document_tabs_load_back_in_order() {
+    let folder = folder("ws-docs");
+    let path = folder.join("workspace.json");
+    let mut saved = state(None);
+    let doc = |path: &str| SavedTab::Doc { path: path.into() };
+    saved.projects[0].spaces[0].tabs = vec![doc("/p/app-feat/README.md"), tab(None)];
+    saved.others.tabs = vec![tab(None), doc("/gone/notes.json")];
+    saved.others.shown = 1;
+    save(&path, &saved).expect("saves");
+    let text = fs::read_to_string(&path).expect("reads");
+    assert!(text.contains(r#""kind": "doc""#), "{text}");
+    assert_eq!(load(&path).expect("loads"), Loaded::Ok(saved));
+    fs::remove_dir_all(folder).expect("cleanup");
 }
 
 fn projects() -> Vec<(PathBuf, Vec<PathBuf>)> {

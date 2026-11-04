@@ -205,3 +205,19 @@ fn tempfile_dir() -> PathBuf {
     std::fs::create_dir_all(&folder).expect("the temp folder");
     folder
 }
+
+#[test]
+fn a_document_whose_file_is_gone_waits_to_wake_as_any_tab() {
+    let mut original = State::empty();
+    let gone = SavedTab::Doc {
+        path: PathBuf::from("/nowhere/elyterminal-gone.md"),
+    };
+    original.others.tabs = vec![tab("/a", ""), gone.clone()];
+    original.others.shown = 1;
+    let mut next = 0;
+    let (projects, dormant, selected) = parts(original.clone(), &mut next);
+    let asleep = &dormant[&Home::Others];
+    assert_eq!(asleep.tabs[1], gone);
+    assert!(!asleep.failed, "a missing file is no failed start");
+    assert_eq!(state(&projects, Vec::new(), &dormant, &selected), original);
+}

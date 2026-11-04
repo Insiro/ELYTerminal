@@ -14,7 +14,7 @@ use ely_gpui_component::{
     primitives::IconName,
 };
 use gpui::{
-    AnyElement, Context, IntoElement, ParentElement, Styled, Subscription, Task, Window, div,
+    AnyElement, App, Context, IntoElement, ParentElement, Styled, Subscription, Task, Window, div,
 };
 
 pub(super) use shape::Dormant;
@@ -130,8 +130,11 @@ impl Writer {
 fn claude_ids(state: &State) -> Vec<String> {
     let trees = state.projects.iter().flat_map(|project| &project.spaces);
     let tabs = trees.flat_map(|tree| &tree.tabs).chain(&state.others.tabs);
-    tabs.filter_map(|SavedTab::Terminal { claude, .. }| claude.clone())
-        .collect()
+    tabs.filter_map(|tab| match tab {
+        SavedTab::Terminal { claude, .. } => claude.clone(),
+        SavedTab::Doc { .. } => None,
+    })
+    .collect()
 }
 
 fn modified(path: &Path) -> Option<SystemTime> {
@@ -196,13 +199,13 @@ impl Workspace {
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |_, cx| {
             if let Some(this) = weak.upgrade() {
-                this.update(cx, |this, _| this.flush());
+                this.update(cx, |this, cx| this.flush(cx));
             }
             true
         });
-        let released = cx.on_release(|this, _| this.flush());
-        let quit = cx.on_app_quit(|this, _| {
-            this.flush();
+        let released = cx.on_release(|this, cx| this.flush(cx));
+        let quit = cx.on_app_quit(|this, cx| {
+            this.flush(cx);
             async {}
         });
         self.persist = Some(Persist {
@@ -227,13 +230,13 @@ impl Workspace {
     }
 
     /// What `workspace.json` would hold now.
-    fn snapshot(&self) -> State {
+    fn snapshot(&self, cx: &App) -> State {
         let live = self
             .tabs
             .iter()
-            .filter_map(|tab| {
+            .map(|tab| {
                 let shown = self.shown.get(&tab.home) == Some(&tab.id);
-                Some((tab.home.clone(), saved(tab.term()?), shown))
+                (tab.home.clone(), saved(&tab.body, cx), shown)
             })
             .collect();
         state(&self.projects, live, &self.dormant, &self.selected)
@@ -246,8 +249,8 @@ impl Workspace {
         };
         persist.saving = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SETTLE).await;
-            let next = this.update(cx, |this, _| {
-                let state = this.snapshot();
+            let next = this.update(cx, |this, cx| {
+                let state = this.snapshot(cx);
                 let persist = this.persist.as_mut()?;
                 persist.number += 1;
                 Some((persist.writer.clone(), persist.number, state))
@@ -268,8 +271,8 @@ impl Workspace {
     }
 
     /// Saves now, on this thread, once, as the window closes or the app quits; later changes are the programs ending.
-    fn flush(&mut self) {
-        let state = self.snapshot();
+    fn flush(&mut self, cx: &App) {
+        let state = self.snapshot(cx);
         let Some(persist) = self.persist.as_mut().filter(|persist| !persist.closed) else {
             return;
         };

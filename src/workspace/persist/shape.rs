@@ -2,13 +2,17 @@
 
 use std::{collections::HashMap, path::Path};
 
+use gpui::App;
+
 use crate::{
     projects::{
         Home, Worktree,
         store::{SavedProject, SavedSpace, SavedTab, SavedTree, State},
     },
-    sessions::Session,
-    workspace::projects::{Listing, Project, Tree, Trees, folder_name},
+    workspace::{
+        projects::{Listing, Project, Tree, Trees, folder_name},
+        tabs::Body,
+    },
 };
 
 /// The saved tabs of a home not woken yet, and the one it showed.
@@ -194,13 +198,18 @@ pub(in crate::workspace) fn parts(
     (projects, dormant, selected)
 }
 
-/// A session as `workspace.json` keeps it: where it started, not where it is.
-pub(in crate::workspace) fn saved(session: &Session) -> SavedTab {
-    SavedTab::Terminal {
-        name: session.name.clone(),
-        shell: session.shell.clone(),
-        args: session.args.clone(),
-        folder: session.start.clone(),
-        claude: session.claude.clone(),
+/// A tab as `workspace.json` keeps it: a session where it started, not where it is; a document by its path.
+pub(in crate::workspace) fn saved(body: &Body, cx: &App) -> SavedTab {
+    match body {
+        Body::Term(session) => SavedTab::Terminal {
+            name: session.name.clone(),
+            shell: session.shell.clone(),
+            args: session.args.clone(),
+            folder: session.start.clone(),
+            claude: session.claude.clone(),
+        },
+        Body::Doc(doc) => SavedTab::Doc {
+            path: doc.read(cx).path().to_path_buf(),
+        },
     }
 }

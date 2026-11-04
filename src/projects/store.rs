@@ -59,6 +59,8 @@ pub enum SavedTab {
         folder: Option<PathBuf>,
         claude: Option<String>,
     },
+    /// A document tab of the file at `path`.
+    Doc { path: PathBuf },
 }
 
 /// What the file gave.
@@ -113,14 +115,19 @@ impl State {
 }
 
 fn check_tabs(tabs: &[SavedTab]) -> Result<(), String> {
-    for SavedTab::Terminal { folder, claude, .. } in tabs {
-        if let Some(folder) = folder {
-            absolute(folder)?;
-        }
-        if let Some(id) = claude
-            && !claude::valid(id)
-        {
-            return Err(format!("claude id `{id}` is not a UUID"));
+    for tab in tabs {
+        match tab {
+            SavedTab::Terminal { folder, claude, .. } => {
+                if let Some(folder) = folder {
+                    absolute(folder)?;
+                }
+                if let Some(id) = claude
+                    && !claude::valid(id)
+                {
+                    return Err(format!("claude id `{id}` is not a UUID"));
+                }
+            }
+            SavedTab::Doc { path } => absolute(path)?,
         }
     }
     Ok(())

@@ -30,13 +30,20 @@ impl Workspace {
         log::info!("workspace: {} tabs of {home:?} wake", asleep.tabs.len());
         let (mut woken, mut failed, mut kept) = (Vec::new(), Vec::new(), Vec::new());
         for (at, tab) in asleep.tabs.into_iter().enumerate() {
-            let SavedTab::Terminal {
-                name,
-                shell,
-                args,
-                folder,
-                claude,
-            } = tab.clone();
+            let (name, shell, args, folder, claude) = match tab.clone() {
+                SavedTab::Terminal {
+                    name,
+                    shell,
+                    args,
+                    folder,
+                    claude,
+                } => (name, shell, args, folder, claude),
+                // A document opens though its file is gone, which its banner says.
+                SavedTab::Doc { path } => {
+                    woken.push((at, self.add_doc(path, home.clone(), window, cx)));
+                    continue;
+                }
+            };
             let start = folder.clone().map_or(Start::Home, Start::In);
             let place = (home.clone(), None);
             // A WSL tab's transcripts lie inside its distribution, out of sight.
