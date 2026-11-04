@@ -2,9 +2,12 @@ use std::path::PathBuf;
 
 use gpui::{AppContext, Context, Window};
 
-use super::{Body, Tab, Workspace, projects::notice};
+use super::{Body, Tab, Workspace, claude::ready, projects::notice};
 use crate::{
-    projects::{Home, TabId},
+    projects::{
+        Home, TabId,
+        claude::{self, Mode},
+    },
     sessions::Session,
     settings::{self, SettingsStore, StartIn},
     term::{
@@ -33,7 +36,7 @@ impl Workspace {
         };
         let shell = SettingsStore::get(cx).shell.clone();
         let place = (self.selected.clone(), None);
-        self.open(&shell, Vec::new(), start, place, window, cx)
+        self.open((&shell, Vec::new()), start, place, None, window, cx)
     }
 
     /// A profile's session: `shell` with `args`, in `folder` or where Start in says.
@@ -53,13 +56,13 @@ impl Workspace {
         };
         log::info!("app: a profile opens {shell} with {} arguments", args.len());
         let place = (self.selected.clone(), None);
-        if let Err(error) = self.open(&shell, args, start, place, window, cx) {
+        if let Err(error) = self.open((&shell, args), start, place, None, window, cx) {
             log::error!("app: no profile session: {error:#}");
         }
     }
 
     /// Where a new session starts: a project's home in its folder, Others where Start in says; none, told, when that folder is gone.
-    fn start_in(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<Start> {
+    pub(super) fn start_in(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<Start> {
         if let Home::Tree { path, .. } = &self.selected {
             if path.is_dir() {
                 return Some(Start::In(path.clone()));
@@ -97,10 +100,18 @@ impl Workspace {
             session.args.clone(),
             session.folder.clone(),
         );
+        // A Claude tab's duplicate starts a Claude session of its own.
+        let claude = session
+            .claude
+            .as_ref()
+            .map(|_| (claude::new_id(), Mode::New));
         log::info!("app: tab {} duplicates into {}", id.0, folder.display());
         let place = (home, Some(id));
-        if let Err(error) = self.open(&shell, args, Start::In(folder), place, window, cx) {
-            log::error!("app: no duplicate tab: {error:#}");
+        let (program, asked) = ((shell.as_str(), args), claude.is_some());
+        match self.open(program, Start::In(folder), place, claude, window, cx) {
+            Err(error) if asked => notice("et.claude.failed", error, window, cx),
+            Err(error) => log::error!("app: no duplicate tab: {error:#}"),
+            Ok(()) => {}
         }
     }
 
@@ -118,31 +129,32 @@ impl Workspace {
         let home = self.home_for(&folder);
         log::info!("app: tab here {} in {home:?}", folder.display());
         let after = (home == self.selected).then(|| self.current_id()).flatten();
-        self.open(&shell, args, Start::In(folder), (home, after), window, cx)
+        let program = (shell.as_str(), args);
+        self.open(program, Start::In(folder), (home, after), None, window, cx)
     }
 
-    /// Shows a `shell` tab with `args` from `start` in `home`, after tab `after` or last; the home changes only once it started.
+    /// Shows a `shell` tab with `args` from `start` in `home`, after tab `after` or last, running `claude` if given; the home changes only once it started.
     pub(super) fn open(
         &mut self,
-        shell: &str,
-        args: Vec<String>,
+        program: (&str, Vec<String>),
         start: Start,
         place: (Home, Option<TabId>),
+        claude: Option<(String, Mode)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
-        let id = self.begin(shell, args, start, place, window, cx)?;
+        let id = self.begin(program, start, place, claude, window, cx)?;
         self.show(id, window, cx);
         Ok(())
     }
 
-    /// A `shell` tab with `args` from `start` in `home`, after tab `after` or last, not shown.
+    /// A `shell` tab with `args` from `start` in `home`, after tab `after` or last, running `claude` if given, not shown.
     pub(super) fn begin(
         &mut self,
-        shell: &str,
-        args: Vec<String>,
+        (shell, args): (&str, Vec<String>),
         start: Start,
         (home, after): (Home, Option<TabId>),
+        claude: Option<(String, Mode)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<TabId> {
@@ -155,9 +167,16 @@ impl Workspace {
             Start::Home => None,
             Start::In(folder) => Some(folder.clone()),
         };
-        let launch = launch(shell, &args, start, &cx.global::<ShellIntegration>().0)?;
+        let mut launch = launch(shell, &args, start, &cx.global::<ShellIntegration>().0)?;
+        if let Some((id, mode)) = &claude {
+            ready(&mut launch, id, *mode, &settings.claude_prelude, cx)?;
+        }
         let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(settings))?;
         let id = self.add(pty, events, launch, (args, home, started), window, cx);
+        if let Some((claude, _)) = claude {
+            let at = self.index(id).expect("the tab just added");
+            self.tabs[at].session_mut().claude = Some(claude);
+        }
         if let Some(at) = after.and_then(|after| self.index(after)) {
             let tab = self.tabs.pop().expect("the tab just added");
             self.tabs.insert(at + 1, tab);
@@ -201,6 +220,7 @@ impl Workspace {
             folder: launch.cwd,
             start,
             claude: None,
+            watch: Default::default(),
             shell,
             args,
             reports: launch.reports,

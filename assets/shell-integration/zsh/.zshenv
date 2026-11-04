@@ -1,4 +1,7 @@
 # ELYTerminal: restore ZDOTDIR, load the user's .zshenv, report folder and title, mark prompts and commands.
+# A Claude tab's id and prelude stay the shell's own, for its first prompt.
+_ely_cl_ask=${ELY_CLAUDE-} _ely_cl_pre=${ELY_CLAUDE_PRELUDE-}
+builtin unset ELY_CLAUDE ELY_CLAUDE_PRELUDE
 if [[ -n "${ELY_ZSH_ZDOTDIR+set}" ]]; then
   ZDOTDIR=$ELY_ZSH_ZDOTDIR
   builtin unset ELY_ZSH_ZDOTDIR
@@ -41,6 +44,7 @@ if [[ -o interactive ]]; then
     precmd_functions=(${precmd_functions:#_ely_mark} _ely_mark)
     if (( _ely_first )); then
       _ely_first=0
+      [[ -n $_ely_cl_ask ]] && _ely_claude
       [[ -o prompt_percent ]] || builtin print -ru2 'ELYTerminal: zsh marks no prompt while prompt_percent is off (setopt prompt_percent)'
       builtin zmodload zsh/sched && builtin sched +0 _ely_mark $ret
     fi
@@ -65,6 +69,25 @@ if [[ -o interactive ]]; then
     fi
     # sched's command leaves its status for the prompt.
     builtin return ${1:-0}
+  }
+  # Claude as a marked command, once: no eval of its id.
+  _ely_claude() {
+    builtin setopt local_options unset no_ksh_arrays no_sh_word_split no_err_return no_err_exit
+    builtin local word= id=${_ely_cl_ask#*:} prelude=$_ely_cl_pre re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    case ${_ely_cl_ask%%:*} in
+      new) word=--session-id ;;
+      resume) word=--resume ;;
+    esac
+    _ely_cl_ask= _ely_cl_pre=
+    if [[ -z $word || ! $id =~ $re ]]; then
+      builtin print -ru2 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start'
+      builtin return
+    fi
+    builtin print -s "claude $word $id"
+    builtin printf '\e]133;A;aid=elyterminal\a\e]133;C\a\e]2;claude\a'
+    [[ -n $prelude ]] && builtin eval "$prelude"
+    claude $word $id
+    builtin printf '\e]133;D;%s\a' $?
   }
   _ely_preexec() {
     _ely_ran=1

@@ -64,6 +64,8 @@ pub enum TerminalEvent {
     Exited(ExitStatus),
     /// A Files node's drag landed on it: the node's tree key.
     Dragged(SharedString),
+    /// An OSC 133 mark, which a Claude tab's watch hears.
+    Marked(crate::projects::claude::Heard),
 }
 
 /// A program on a pseudo-terminal, drawn cell by cell in the theme and font the settings choose.

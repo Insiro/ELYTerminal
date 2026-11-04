@@ -7,7 +7,7 @@ use gpui::{App, InteractiveElement, KeyBinding, Menu, MenuItem, OsAction, action
 use crate::{
     settings::window::OpenSettings,
     term::{input::Find, zoom},
-    workspace::{CloseSession, NewSession, TogglePanel, ToggleSessions},
+    workspace::{CloseSession, NewClaude, NewSession, TogglePanel, ToggleSessions},
 };
 
 actions!(
@@ -36,6 +36,7 @@ pub fn menus(cx: &App) -> Vec<Menu> {
             word("et.menu.shell"),
             vec![
                 MenuItem::action(word("et.menu.new_session"), NewSession),
+                MenuItem::action(word("et.menu.new_claude"), NewClaude),
                 MenuItem::action(word("et.menu.close_session"), CloseSession),
             ],
         ),

@@ -361,3 +361,22 @@ fn the_interface_wears_the_system_font_at_13_px_unless_named() {
         );
     }
 }
+
+#[test]
+fn claude_s_prelude_is_one_line_of_plain_text() {
+    let mut settings = Settings::default();
+    assert!(settings.claude_prelude.is_empty());
+    settings.claude_prelude = "nvm use default && export X='a b'".into();
+    settings.validate().expect("a line passes");
+    for bad in [
+        "nvm use\nrm -rf ~",
+        "a\rb",
+        "a\u{1b}[2Jb",
+        "tab\there",
+        "\u{85}",
+    ] {
+        settings.claude_prelude = bad.into();
+        let error = settings.validate().expect_err(bad).to_string();
+        assert!(error.contains("claude_prelude"), "{error}");
+    }
+}

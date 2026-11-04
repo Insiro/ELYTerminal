@@ -1,5 +1,8 @@
 //! Claude Code sessions a tab can resume: their ids and transcripts.
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 /// How a tab starts Claude.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,4 +74,92 @@ pub fn env(id: &str, mode: Mode) -> String {
         Mode::Resume => "resume",
     };
     format!("{word}:{id}")
+}
+
+/// The mode a restored tab takes from its transcript's search: resume unless surely absent.
+pub fn mode(found: Option<bool>) -> Mode {
+    match found {
+        Some(false) => Mode::New,
+        Some(true) | None => Mode::Resume,
+    }
+}
+
+/// The modes of restored ids, found off the main thread from the start.
+#[derive(Debug, Default)]
+pub struct Modes {
+    finding: Option<std::thread::JoinHandle<HashMap<String, Mode>>>,
+    found: HashMap<String, Mode>,
+}
+
+impl Modes {
+    /// Looks for each of `ids`' transcripts on a thread of its own.
+    pub fn find(ids: Vec<String>) -> Self {
+        if ids.is_empty() {
+            return Self::default();
+        }
+        let finding = std::thread::spawn(move || {
+            let dir = config_dir();
+            ids.into_iter()
+                .map(|id| {
+                    let found = dir.as_deref().and_then(|dir| transcript(&id, dir));
+                    let mode = mode(found);
+                    log::info!("claude: {id} restores as {mode:?}");
+                    (id, mode)
+                })
+                .collect()
+        });
+        Self {
+            finding: Some(finding),
+            found: HashMap::new(),
+        }
+    }
+
+    /// The mode `id` restores in; Resume when it was not looked for.
+    pub fn of(&mut self, id: &str) -> Mode {
+        if let Some(finding) = self.finding.take() {
+            match finding.join() {
+                Ok(found) => self.found = found,
+                Err(_) => log::error!("claude: the transcript search panicked"),
+            }
+        }
+        self.found.get(id).copied().unwrap_or(Mode::Resume)
+    }
+}
+
+/// An OSC 133 mark, as the watch on a Claude tab hears it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Heard {
+    Prompt,
+    Input,
+    Output,
+    Done(Option<i32>),
+}
+
+/// Follows a Claude tab's marks: the integration's prompt start, then its command, until that command ends.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Watch {
+    #[default]
+    Starting,
+    /// A prompt started; Claude's command starts before its input does.
+    Prompted,
+    Running,
+    /// The first prompt read input: Claude never started.
+    Off,
+}
+
+impl Watch {
+    /// Hears `mark`; true once Claude's command ended with a status.
+    pub fn hear(&mut self, mark: Heard) -> bool {
+        match (*self, mark) {
+            (Self::Starting, Heard::Prompt) => *self = Self::Prompted,
+            (Self::Prompted, Heard::Output) => *self = Self::Running,
+            (Self::Prompted, Heard::Input) => *self = Self::Off,
+            (Self::Running, Heard::Done(Some(_))) => {
+                *self = Self::Off;
+                return true;
+            }
+            _ => {}
+        }
+        false
+    }
 }

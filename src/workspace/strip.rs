@@ -51,7 +51,11 @@ impl Workspace {
         let workspace = cx.entity();
         let tabs = self.strip().into_iter().filter_map(|id| {
             let session = self.tabs[self.index(id)?].session();
-            Some(EditorTab::new(key(id), session.named().to_string()).icon(icon(session.need())))
+            let icon = match session.need() {
+                Need::Calm if session.claude.is_some() => IconName::Bot,
+                need => icon(need),
+            };
+            Some(EditorTab::new(key(id), session.named().to_string()).icon(icon))
         });
         let (select, close) = (workspace.clone(), workspace.clone());
         let mut strip = EditorTabs::new("tabs", tabs)
@@ -62,7 +66,7 @@ impl Workspace {
             })
             .on_close(move |key, window, cx| {
                 if let Some(id) = tab_of(key) {
-                    close.update(cx, |this, cx| this.close(id, window, cx))
+                    close.update(cx, |this, cx| this.ask_close(id, window, cx))
                 }
             });
         if let Some(id) = self.current_id() {
@@ -81,7 +85,10 @@ impl Workspace {
             .tooltip(text(cx, "et.session.new", &[]))
             .on_click(move |_, window, cx| new.update(cx, |this, cx| this.new_session(window, cx)));
         let more = self.current_id().map(|id| {
-            let menu = menu::tab(&workspace, id, settings.session_menu, cx);
+            let claude = self
+                .index(id)
+                .and_then(|at| self.tabs[at].session().claude.clone());
+            let menu = menu::tab(&workspace, id, (settings.session_menu, claude), cx);
             OverflowMenu::new("tab-menu", menu).tooltip(text(cx, "et.tab.more", &[]))
         });
         div()
@@ -92,17 +99,23 @@ impl Workspace {
             .pr_2()
             .child(div().flex_1().min_w_0().child(strip))
             .child(plus)
-            .children(crate::profiles::button(&workspace, &self.found, cx))
+            .child(crate::profiles::button(&workspace, &self.found, cx))
             .children(more)
     }
 
     /// What the terminal's place shows while the home holds no tab.
     pub(super) fn empty(&self, cx: &Context<Self>) -> impl IntoElement {
-        let (workspace, adding) = (cx.entity(), cx.entity());
+        let (workspace, adding, claude) = (cx.entity(), cx.entity(), cx.entity());
         let new = Button::new("empty-new-tab", text(cx, "et.session.new", &[]))
             .icon(IconName::Plus)
             .on_click(move |_, window, cx| {
                 workspace.update(cx, |this, cx| this.new_session(window, cx))
+            });
+        let new_claude = Button::new("empty-new-claude", text(cx, "et.claude.new", &[]))
+            .icon(IconName::Bot)
+            .variant(ButtonVariant::Ghost)
+            .on_click(move |_, window, cx| {
+                claude.update(cx, |this, cx| this.new_claude(None, window, cx))
             });
         let add = Button::new("empty-add-project", text(cx, "et.projects.add", &[]))
             .icon(IconName::FolderPlus)
@@ -110,7 +123,7 @@ impl Workspace {
             .on_click(move |_, window, cx| {
                 adding.update(cx, |this, cx| this.choose_project(window, cx))
             });
-        let new = div().flex().gap_2().child(new).child(add);
+        let new = div().flex().gap_2().child(new).child(new_claude).child(add);
         div()
             .size_full()
             .flex()

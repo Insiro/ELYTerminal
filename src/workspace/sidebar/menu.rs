@@ -25,6 +25,18 @@ fn new_terminal(workspace: &Entity<Workspace>, home: Home, cx: &App) -> MenuItem
         })
 }
 
+/// A new Claude tab in `home`, selected.
+fn new_claude(workspace: &Entity<Workspace>, home: Home, cx: &App) -> MenuItem {
+    let workspace = workspace.clone();
+    MenuItem::new(text(cx, "et.claude.new", &[]))
+        .icon(IconName::Bot)
+        .on_click(move |window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.new_claude(Some(home.clone()), window, cx)
+            })
+        })
+}
+
 fn reveal(folder: PathBuf, cx: &App) -> MenuItem {
     MenuItem::new(text(cx, "et.projects.reveal", &[]))
         .icon(IconName::FolderOpen)
@@ -39,6 +51,7 @@ pub(super) fn project(workspace: &Entity<Workspace>, project: &Project, cx: &App
     let (refresh, rename, remove) = (workspace.clone(), workspace.clone(), workspace.clone());
     Menu::new()
         .item(new_terminal(workspace, project.home(), cx))
+        .item(new_claude(workspace, project.home(), cx))
         .item(
             MenuItem::new(text(cx, "et.projects.refresh", &[]))
                 .icon(IconName::RefreshCw)
@@ -63,7 +76,8 @@ pub(super) fn project(workspace: &Entity<Workspace>, project: &Project, cx: &App
 pub(super) fn worktree(workspace: &Entity<Workspace>, home: Home, path: PathBuf, cx: &App) -> Menu {
     let copied = path.clone();
     Menu::new()
-        .item(new_terminal(workspace, home, cx))
+        .item(new_terminal(workspace, home.clone(), cx))
+        .item(new_claude(workspace, home, cx))
         .item(
             MenuItem::new(text(cx, "et.files.copy_path", &[]))
                 .icon(IconName::Copy)

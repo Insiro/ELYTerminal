@@ -5,7 +5,35 @@ else
     set -e XDG_DATA_DIRS
 end
 set -e ELY_FISH_XDG_DATA_DIRS
+# A Claude tab's id and prelude stay the shell's own, for its first prompt.
+set -g _ely_cl_ask "$ELY_CLAUDE"
+set -g _ely_cl_pre "$ELY_CLAUDE_PRELUDE"
+set -e ELY_CLAUDE
+set -e ELY_CLAUDE_PRELUDE
 if status is-interactive
+    # Claude as a marked command, once: no eval of its id.
+    function _ely_claude --on-event fish_prompt
+        test -n "$_ely_cl_ask"; or return
+        set -l word
+        switch $_ely_cl_ask
+            case 'new:*'
+                set word --session-id
+            case 'resume:*'
+                set word --resume
+        end
+        set -l id (string replace -r '^[^:]*:' '' -- $_ely_cl_ask)
+        set -l prelude $_ely_cl_pre
+        set -g _ely_cl_ask
+        set -g _ely_cl_pre
+        if test -z "$word"; or not string match -qr '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -- $id
+            echo 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start' >&2
+            return
+        end
+        printf '\e]133;A;aid=elyterminal\a\e]133;C\a\e]2;claude\a'
+        test -n "$prelude"; and eval $prelude
+        claude $word $id
+        printf '\e]133;D;%s\a' $status
+    end
     function _ely_prompt --on-event fish_prompt
         set -l dir $PWD
         if set -q ELY_WSL

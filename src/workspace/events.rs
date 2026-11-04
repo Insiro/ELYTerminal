@@ -15,6 +15,10 @@ impl Workspace {
         let Some(index) = self.holding(id) else {
             return;
         };
+        if let TerminalEvent::Marked(mark) = event {
+            self.claude_marked(index, *mark, cx);
+            return;
+        }
         let tab = self.tabs[index].id;
         let shown = self.current_id() == Some(tab);
         let session = self.tabs[index].session_mut();
@@ -43,7 +47,7 @@ impl Workspace {
                 log::debug!("app: hidden tab {} waits", tab.0);
                 session.waiting = true;
             }
-            TerminalEvent::Shows(_) | TerminalEvent::Ended(_) => {}
+            TerminalEvent::Shows(_) | TerminalEvent::Ended(_) | TerminalEvent::Marked(_) => {}
             TerminalEvent::Dragged(key) => {
                 if !shown {
                     return;

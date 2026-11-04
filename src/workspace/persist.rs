@@ -28,6 +28,7 @@ use super::{
 use crate::{
     projects::{
         Home, TabId,
+        claude::Modes,
         store::{self, Loaded, SavedTab, State},
     },
     settings::SettingsStore,
@@ -47,6 +48,8 @@ pub struct Boot {
     pub folder: Option<PathBuf>,
     /// A program to run in a tab of its folder's home, as `shot` asks.
     pub launch: Option<Launch>,
+    /// How each saved Claude tab starts, found off the main thread.
+    pub modes: Modes,
 }
 
 impl Boot {
@@ -55,12 +58,17 @@ impl Boot {
         let path = store::default_path()?;
         let loaded = store::load(&path)?;
         let mtime = modified(&path);
+        let modes = match &loaded {
+            Loaded::Fresh(state) | Loaded::Ok(state) => Modes::find(claude_ids(state)),
+            Loaded::Corrupt { .. } => Modes::default(),
+        };
         Ok(Self {
             path,
             loaded,
             mtime,
             folder,
             launch: None,
+            modes,
         })
     }
 }
@@ -118,6 +126,14 @@ impl Writer {
     }
 }
 
+/// Every Claude id `state` keeps.
+fn claude_ids(state: &State) -> Vec<String> {
+    let trees = state.projects.iter().flat_map(|project| &project.spaces);
+    let tabs = trees.flat_map(|tree| &tree.tabs).chain(&state.others.tabs);
+    tabs.filter_map(|SavedTab::Terminal { claude, .. }| claude.clone())
+        .collect()
+}
+
 fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|meta| meta.modified()).ok()
 }
@@ -142,6 +158,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
+        self.modes = boot.modes;
         let (state, corrupt) = match boot.loaded {
             Loaded::Fresh(state) | Loaded::Ok(state) => (state, None),
             Loaded::Corrupt { backup } => (State::empty(), Some(backup)),
@@ -168,7 +185,7 @@ impl Workspace {
             self.select_home(home.clone(), window, cx);
             let shell = SettingsStore::get(cx).shell.clone();
             let start = Start::In(folder.clone());
-            self.open(&shell, Vec::new(), start, (home, None), window, cx)?;
+            self.open((&shell, Vec::new()), start, (home, None), None, window, cx)?;
             pending = self.current_id().map(|id| (id, folder));
         } else {
             self.select_home(selected, window, cx);
@@ -291,16 +308,19 @@ impl Workspace {
             } = tab.clone();
             let start = folder.clone().map_or(Start::Home, Start::In);
             let place = (home.clone(), None);
+            let claude = claude.map(|id| {
+                let mode = self.modes.of(&id);
+                (id, mode)
+            });
             let shown = folder
                 .as_deref()
                 .map_or_else(|| "~".into(), |at| at.display().to_string());
-            match self.begin(&shell, args, start, place, window, cx) {
+            match self.begin((&shell, args), start, place, claude, window, cx) {
                 Ok(id) => {
                     let tab = self.index(id).map(|at| &mut self.tabs[at]);
                     if let Some(tab) = tab {
                         let session = tab.session_mut();
                         session.name = name;
-                        session.claude = claude;
                         session
                             .terminal
                             .update(cx, |view, _| view.set_front(false, window));

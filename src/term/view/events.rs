@@ -1,6 +1,7 @@
 //! What the pty reports, as the view hears it.
 
 use super::*;
+use crate::projects::claude::Heard;
 
 /// How long output and scrolling rest before history packs.
 const IDLE: Duration = Duration::from_secs(2);
@@ -37,6 +38,7 @@ impl TerminalView {
         for event in events {
             if let PtyEvent::Mark(mark, holder) = &event {
                 self.records.mark(mark, *holder);
+                cx.emit(TerminalEvent::Marked(heard(mark)));
             }
             match event {
                 PtyEvent::Folder(folder) => {
@@ -136,5 +138,15 @@ impl TerminalView {
             Event::ChildExit(status) => cx.emit(TerminalEvent::Exited(status)),
             Event::Exit => log::debug!("terminal {}: the grid closed", self.pty.pid),
         }
+    }
+}
+
+/// `mark` as a Claude tab's watch hears it.
+fn heard(mark: &Mark) -> Heard {
+    match mark {
+        Mark::Prompt(_) => Heard::Prompt,
+        Mark::Input => Heard::Input,
+        Mark::Output => Heard::Output,
+        Mark::Done(status) => Heard::Done(*status),
     }
 }

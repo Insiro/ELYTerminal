@@ -100,6 +100,9 @@ pub struct SettingsWindow {
     /// The background picture, typed or browsed, and why it is not saved.
     image: Entity<TextInput>,
     refused_image: Option<SharedString>,
+    /// What a Claude tab runs before Claude, and why it is not saved.
+    prelude: Entity<TextInput>,
+    refused_prelude: Option<SharedString>,
     /// Why the last change did not save.
     failed: Option<SharedString>,
     /// Refusals so far; a field keyed by it drops its draft and shows the settings again.
@@ -119,7 +122,7 @@ pub struct SettingsWindow {
     theme_name: Entity<TextInput>,
     _named: Subscription,
     slot: usize,
-    _typed: [Subscription; 3],
+    _typed: [Subscription; 4],
     _settings: Subscription,
     _updates: Subscription,
     _language: Subscription,
@@ -148,6 +151,11 @@ impl SettingsWindow {
             input.set_text(SettingsStore::get(cx).background_image.clone(), cx);
             input
         });
+        let prelude = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx).placeholder("nvm use default");
+            input.set_text(SettingsStore::get(cx).claude_prelude.clone(), cx);
+            input
+        });
         let search = cx.new(|cx| {
             let placeholder = text(cx, "et.settings.search_shortcuts", &[]);
             TextInput::new(window, cx).placeholder(placeholder)
@@ -174,6 +182,13 @@ impl SettingsWindow {
                     this.refused_image = this.save_typed("background_image", image, put, cx);
                 }
             }),
+            cx.subscribe(&prelude, |this, input, event: &InputEvent, cx| {
+                if let InputEvent::Changed = event {
+                    let prelude = input.read(cx).text().to_string();
+                    let put = |settings: &mut Settings, prelude| settings.claude_prelude = prelude;
+                    this.refused_prelude = this.save_typed("claude_prelude", prelude, put, cx);
+                }
+            }),
         ];
         let profiles = terminal::profiles::fields(window, cx);
         // Focus inside, so the window's keys find its context.
@@ -189,6 +204,8 @@ impl SettingsWindow {
             refused_folder: None,
             image,
             refused_image: None,
+            prelude,
+            refused_prelude: None,
             failed: None,
             drafts: 0,
             font,

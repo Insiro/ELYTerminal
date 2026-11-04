@@ -33,6 +33,8 @@ pub struct Session {
     pub start: Option<PathBuf>,
     /// The Claude session it runs, kept as `workspace.json` gave it.
     pub claude: Option<String>,
+    /// Follows Claude's command, to drop its id once it ends.
+    pub watch: crate::projects::claude::Watch,
     /// The program it runs, as its path; empty for the login shell.
     pub shell: String,
     /// The arguments its profile gave the program.

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use ely_gpui_component::{
     buttons::{Button, SegmentedControl},
     feedback::InlineMessage,
-    forms::{Copy, NumberInput, Paste, PathInput, SelectAll, Switch},
+    forms::{Copy, Input, NumberInput, Paste, PathInput, SelectAll, Switch},
     i18n::text,
     primitives::Severity,
     settings::{KeyboardShortcutsList, SettingsRow, SettingsSection, Shortcut},
@@ -84,6 +84,11 @@ impl SettingsWindow {
                 SettingsRow::new(word("et.terminal.start_folder"))
                     .description(word("et.terminal.start_folder_hint"))
                     .control(folder),
+            )
+            .row(
+                SettingsRow::new(word("et.terminal.claude_prelude"))
+                    .description(word("et.terminal.claude_prelude_hint"))
+                    .control(self.prelude_field(cx)),
             )
             .row(SettingsRow::new(word("et.terminal.scrollback")).control(lines));
         // Off macOS, Alt is always Alt.
@@ -172,6 +177,16 @@ impl SettingsWindow {
             .child(section)
             .child(profiles)
             .child(keys)
+    }
+}
+
+impl SettingsWindow {
+    /// Claude's prelude, with why its text is not saved.
+    fn prelude_field(&self, cx: &App) -> Div {
+        let refused = self.refused_prelude.clone();
+        let refused = refused.map(|why| InlineMessage::new(Severity::Danger, why));
+        let field = div().w(cx.theme().prose_width()).flex().flex_col().gap_1();
+        field.child(Input::new(&self.prelude)).children(refused)
     }
 }
 

@@ -15,9 +15,21 @@ use crate::projects::TabId;
 
 /// What the workspace is asking.
 pub(super) enum Asking {
-    RenameTab { id: TabId, field: Entity<TextInput> },
-    RenameProject { id: u64, field: Entity<TextInput> },
-    RemoveProject { id: u64 },
+    RenameTab {
+        id: TabId,
+        field: Entity<TextInput>,
+    },
+    RenameProject {
+        id: u64,
+        field: Entity<TextInput>,
+    },
+    RemoveProject {
+        id: u64,
+    },
+    /// Closing a tab Claude still runs in.
+    CloseClaude {
+        id: TabId,
+    },
 }
 
 impl Workspace {
@@ -155,6 +167,21 @@ impl Workspace {
                     .destructive()
                     .on_confirm(move |window, cx| {
                         submit.update(cx, |this, cx| this.remove_project(id, window, cx))
+                    })
+                    .into_any_element()
+            }
+            Asking::CloseClaude { id } => {
+                let id = *id;
+                let title = text(cx, "et.claude.close_title", &[]);
+                let message = text(cx, "et.claude.close_body", &[]);
+                ConfirmDialog::new("close-claude", title, message, closed)
+                    .confirm(text(cx, "et.claude.close_confirm", &[]))
+                    .destructive()
+                    .on_confirm(move |window, cx| {
+                        submit.update(cx, |this, cx| {
+                            this.close(id, window, cx);
+                            this.refocus(window, cx);
+                        })
                     })
                     .into_any_element()
             }

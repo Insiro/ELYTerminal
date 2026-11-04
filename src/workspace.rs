@@ -23,11 +23,12 @@ use crate::{
     files::{Files, Here},
     git::panel::{Acted, GitPanel},
     menus,
-    projects::{Home, TabId},
+    projects::{Home, TabId, claude::Modes},
     sessions::orb,
     settings::{PanelTab, SettingsStore, window::OpenSettings},
 };
 
+mod claude;
 mod dialogs;
 mod events;
 mod folder;
@@ -57,6 +58,7 @@ actions!(
         ToggleSessions,
         TogglePanel,
         NewSession,
+        NewClaude,
         CloseSession,
         NextSession,
         PreviousSession,
@@ -119,6 +121,8 @@ pub struct Workspace {
     refreshed: Option<Instant>,
     /// The saved tabs of each home not woken yet.
     dormant: HashMap<Home, Dormant>,
+    /// How each restored Claude tab starts.
+    modes: Modes,
     /// Saves `workspace.json`, once restored.
     persist: Option<Persist>,
     asking: Option<Asking>,
@@ -174,6 +178,7 @@ impl Workspace {
             next_project: 0,
             refreshed: None,
             dormant: HashMap::new(),
+            modes: Modes::default(),
             persist: None,
             asking: None,
             files,
@@ -381,11 +386,16 @@ impl Render for Workspace {
                     this.new_session(window, cx);
                 }
             }))
+            .on_action(cx.listener(|this, _: &NewClaude, window, cx| {
+                if this.asking.is_none() {
+                    this.new_claude(None, window, cx);
+                }
+            }))
             // Only a shown tab closes, so the menu item waits for one.
             .when_some(self.current_id(), |root, id| {
                 root.on_action(cx.listener(move |this, _: &CloseSession, window, cx| {
                     if this.asking.is_none() {
-                        this.close(id, window, cx);
+                        this.ask_close(id, window, cx);
                     }
                 }))
             })

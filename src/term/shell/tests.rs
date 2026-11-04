@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+mod claude;
 mod resize;
 mod start;
 

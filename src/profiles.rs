@@ -69,13 +69,20 @@ fn listed(text: &str) -> Vec<Found> {
     found
 }
 
-/// The chevron beside +, its menu of profiles; none while there is none.
-pub fn button(workspace: &Entity<Workspace>, found: &[Found], cx: &App) -> Option<OverflowMenu> {
+/// The chevron beside +: a Claude tab, then the profiles.
+pub fn button(workspace: &Entity<Workspace>, found: &[Found], cx: &App) -> OverflowMenu {
     let profiles = &SettingsStore::get(cx).profiles;
-    if profiles.is_empty() && found.is_empty() {
-        return None;
+    let claude = workspace.clone();
+    let mut menu = Menu::new().item(
+        MenuItem::new(text(cx, "et.claude.new", &[]))
+            .icon(IconName::Bot)
+            .on_click(move |window, cx| {
+                claude.update(cx, |this, cx| this.new_claude(None, window, cx))
+            }),
+    );
+    if !profiles.is_empty() || !found.is_empty() {
+        menu = menu.separator();
     }
-    let mut menu = Menu::new();
     for profile in profiles {
         let words = settings::words(&profile.command).expect("the settings checked it");
         let folder = (!profile.folder.is_empty()).then(|| PathBuf::from(&profile.folder));
@@ -88,11 +95,9 @@ pub fn button(workspace: &Entity<Workspace>, found: &[Found], cx: &App) -> Optio
         menu = menu.item(item(workspace, &shell.name, shell.words.clone(), None));
     }
     let tooltip = text(cx, "et.session.profiles", &[]);
-    Some(
-        OverflowMenu::new("profiles", menu)
-            .icon(IconName::ChevronDown)
-            .tooltip(tooltip),
-    )
+    OverflowMenu::new("profiles", menu)
+        .icon(IconName::ChevronDown)
+        .tooltip(tooltip)
 }
 
 /// An entry that opens `words` in `folder`, else where Start in says.

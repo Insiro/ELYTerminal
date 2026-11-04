@@ -111,6 +111,8 @@ pub struct Settings {
     pub start_folder: String,
     /// What the new-session menu offers before the detected shells.
     pub profiles: Vec<Profile>,
+    /// A command a Claude tab's shell runs just before Claude; empty for none.
+    pub claude_prelude: String,
     pub theme: String,
     /// The theme while the system is dark; none keeps `theme`.
     pub dark_theme: Option<String>,
@@ -189,6 +191,7 @@ impl Default for Settings {
             start_in: StartIn::Home,
             start_folder: String::new(),
             profiles: Vec::new(),
+            claude_prelude: String::new(),
             theme: themes::default_id().into(),
             dark_theme: None,
             custom_themes: Vec::new(),
@@ -310,6 +313,10 @@ impl Settings {
                 profile.name
             );
         }
+        anyhow::ensure!(
+            !self.claude_prelude.chars().any(char::is_control),
+            "claude_prelude holds a newline or another control character"
+        );
         anyhow::ensure!(
             self.start_in != StartIn::Folder || !self.start_folder.is_empty(),
             "start_in is folder, but start_folder names none"

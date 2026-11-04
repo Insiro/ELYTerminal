@@ -1,4 +1,7 @@
 # ELYTerminal: load the usual startup files, report folder and title, mark prompts and commands.
+# A Claude tab's id and prelude stay the shell's own, for its first prompt.
+_ely_cl_ask=${ELY_CLAUDE-} _ely_cl_pre=${ELY_CLAUDE_PRELUDE-}
+builtin unset ELY_CLAUDE ELY_CLAUDE_PRELUDE
 if [ -n "${ELY_BASH_LOGIN-}" ]; then
   builtin unset ELY_BASH_LOGIN
   [ -r /etc/profile ] && builtin source /etc/profile
@@ -62,7 +65,26 @@ _ely_prompt() {
   title=${PWD##*/}
   [ -n "$dir" ] && builtin printf '\e]7;file://%s\a' "$url"
   builtin printf '\e]2;%s\a' "${title//[[:cntrl:]]/}"
+  [ -n "$_ely_cl_ask" ] && _ely_claude
   builtin return $ret
+}
+# Claude as a marked command, once: no eval of its id.
+_ely_claude() {
+  builtin local word= id=${_ely_cl_ask#*:} prelude=$_ely_cl_pre re='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  case ${_ely_cl_ask%%:*} in
+    new) word=--session-id ;;
+    resume) word=--resume ;;
+  esac
+  _ely_cl_ask= _ely_cl_pre=
+  if [ -z "$word" ] || ! [[ $id =~ $re ]]; then
+    builtin printf 'ELYTerminal: ELY_CLAUDE names no Claude session, so claude does not start\n' >&2
+    builtin return
+  fi
+  builtin history -s "claude $word $id"
+  builtin printf '\e]133;A;aid=elyterminal\a\e]133;C\a\e]2;claude\a'
+  [ -n "$prelude" ] && builtin eval "$prelude"
+  claude "$word" "$id"
+  builtin printf '\e]133;D;%s\a' "$?"
 }
 # Last, after anything that sets PS1 or PS0.
 _ely_mark() {

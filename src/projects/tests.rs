@@ -213,3 +213,46 @@ fn a_transcript_is_found_by_id() {
     assert_eq!(claude::transcript(&id, &config), Some(true));
     fs::remove_dir_all(config).expect("cleanup");
 }
+
+#[test]
+fn a_restored_id_resumes_unless_its_transcript_is_surely_absent() {
+    use claude::{Mode, mode};
+    assert_eq!(mode(Some(true)), Mode::Resume);
+    assert_eq!(mode(Some(false)), Mode::New);
+    assert_eq!(mode(None), Mode::Resume);
+    let mut none = claude::Modes::find(Vec::new());
+    assert_eq!(none.of(&claude::new_id()), Mode::Resume);
+}
+
+#[test]
+fn claude_s_exit_is_its_command_s_end_after_the_first_prompt() {
+    use claude::{Heard::*, Watch};
+    let ended = |marks: &[claude::Heard]| {
+        let mut watch = Watch::default();
+        marks.iter().filter(|mark| watch.hear(**mark)).count()
+    };
+    assert_eq!(ended(&[Prompt, Output, Done(Some(0))]), 1);
+    assert_eq!(ended(&[Prompt, Output, Done(Some(130))]), 1);
+    // A command an rc file ran before the first prompt is not Claude.
+    assert_eq!(ended(&[Output, Done(Some(0)), Prompt, Input]), 0);
+    // A start with no status leaves Claude running.
+    assert_eq!(ended(&[Prompt, Output, Done(None)]), 0);
+    assert_eq!(ended(&[Prompt, Output, Done(None), Done(Some(1))]), 1);
+    // A first prompt that reads input means Claude never ran; later commands are the user's.
+    assert_eq!(ended(&[Prompt, Input, Output, Done(Some(0))]), 0);
+    // fish's own prompt start before ours.
+    assert_eq!(ended(&[Prompt, Prompt, Output, Done(Some(0))]), 1);
+    // Once only.
+    assert_eq!(
+        ended(&[
+            Prompt,
+            Output,
+            Done(Some(0)),
+            Prompt,
+            Input,
+            Output,
+            Done(Some(0))
+        ]),
+        1
+    );
+}
