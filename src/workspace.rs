@@ -29,6 +29,8 @@ mod dialogs;
 mod events;
 mod folder;
 mod panel;
+mod projects;
+mod refresh;
 mod session;
 mod sidebar;
 mod strip;
@@ -37,6 +39,7 @@ mod toggles;
 mod widths;
 
 use dialogs::Asking;
+use projects::Project;
 use tabs::{Body, Tab};
 
 use toggles::column_toggle;
@@ -103,6 +106,11 @@ pub struct Workspace {
     /// The tab each home shows.
     shown: HashMap<Home, TabId>,
     next_tab: u64,
+    /// The projects the left column lists, in order.
+    projects: Vec<Project>,
+    next_project: u64,
+    /// When an activation last listed every project's worktrees.
+    refreshed: Option<Instant>,
     asking: Option<Asking>,
     files: Entity<Files>,
     git: Entity<GitPanel>,
@@ -119,6 +127,7 @@ pub struct Workspace {
     _settings: Subscription,
     _acted: Subscription,
     _here: Subscription,
+    _activation: Subscription,
 }
 
 impl Workspace {
@@ -133,6 +142,9 @@ impl Workspace {
         let git = cx.new(|cx| GitPanel::new(launch.cwd.clone(), window, cx));
         // A change the Git panel made shows in Files' marks too.
         let acted = cx.subscribe(&git, |this, _, _: &Acted, cx| {
+            if let Home::Tree { project, .. } = this.selected.clone() {
+                this.refresh_folder(&project, cx);
+            }
             let Some(folder) = this.current().map(|tab| tab.session().folder.clone()) else {
                 return;
             };
@@ -154,6 +166,9 @@ impl Workspace {
             selected: Home::Others,
             shown: HashMap::new(),
             next_tab: 0,
+            projects: Vec::new(),
+            next_project: 0,
+            refreshed: None,
             asking: None,
             files,
             git,
@@ -174,18 +189,25 @@ impl Workspace {
             }),
             _acted: acted,
             _here: here,
+            _activation: cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() {
+                    this.refresh_all(cx);
+                }
+            }),
         };
-        let first = workspace.add(pty, events, launch, Vec::new(), window, cx);
+        let home = workspace.selected.clone();
+        let first = workspace.add(pty, events, launch, (Vec::new(), home), window, cx);
         workspace.show(first, window, cx);
         workspace
     }
 
+    /// A tab of `pty` in `home`, last in the list.
     fn add(
         &mut self,
         pty: Pty,
         events: Events,
         launch: Launch,
-        args: Vec<String>,
+        (args, home): (Vec<String>, Home),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> TabId {
@@ -205,7 +227,7 @@ impl Workspace {
             "app: tab {} opens {pid} in {} of {:?}",
             id.0,
             launch.cwd.display(),
-            self.selected
+            home
         );
         let session = Session {
             terminal,
@@ -222,7 +244,7 @@ impl Workspace {
         };
         self.tabs.push(Tab {
             id,
-            home: self.selected.clone(),
+            home,
             body: Body::Term(session),
         });
         id
@@ -233,8 +255,7 @@ impl Workspace {
         for tab in &mut self.tabs {
             tab.session_mut().note(now, cx);
         }
-        let moving = SettingsStore::get(cx).show_sessions
-            && self.drawn().is_some_and(|session| session.moves(now));
+        let moving = SettingsStore::get(cx).show_sessions && self.marks_move(now);
         if moving == self.ticking.is_some() {
             return;
         }
@@ -259,16 +280,21 @@ impl Workspace {
         self.git.update(cx, |git, cx| git.show(folder, cx));
     }
 
-    /// What the shown tab is called.
-    fn title(&self) -> &str {
-        self.current().map_or(TITLE, |tab| tab.session().named())
+    /// What the shown tab is called, else the selected home.
+    fn title(&self) -> String {
+        match self.current() {
+            Some(tab) => tab.session().named().to_string(),
+            None => self
+                .home_label(&self.selected)
+                .unwrap_or_else(|| TITLE.into()),
+        }
     }
 
     fn retitle(&self, window: &mut Window) {
         let title = self.title();
         if window.window_title() != title {
             log::debug!("app: the title is {title:?}");
-            window.set_window_title(title);
+            window.set_window_title(&title);
         }
     }
 }
@@ -321,10 +347,18 @@ impl Render for Workspace {
             None => self.empty(cx).into_any_element(),
         };
         let mut terminal = ShellColumn::new("terminal")
-            .title(self.title().to_string())
+            .title(self.title())
             .child(self.tab_strip(cx))
             .child(div().flex_1().min_h_0().child(body));
         if settings.show_sessions {
+            let added = workspace.clone();
+            let add = IconButton::new("add-project", IconName::FolderPlus)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .tooltip(text(cx, "et.projects.add", &[]))
+                .on_click(move |_, window, cx| {
+                    added.update(cx, |this, cx| this.choose_project(window, cx))
+                });
             let new = IconButton::new("new-session", IconName::Plus)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
@@ -335,7 +369,8 @@ impl Render for Workspace {
             let column = self
                 .side_column(Side::Sessions, cx)
                 .leading(left)
-                .action(new)
+                .title(text(cx, "et.projects.title", &[]))
+                .action(div().flex().items_center().gap_1().child(add).child(new))
                 .child(self.homes(now, cx));
             shell = shell.column(column);
         } else {

@@ -1,14 +1,23 @@
 //! The questions the workspace asks over its window.
 
-use ely_gpui_component::{forms::TextInput, i18n::text, overlays::PromptDialog};
-use gpui::{AppContext, Context, Entity, Focusable, Window};
+use ely_gpui_component::{
+    forms::TextInput,
+    i18n::text,
+    overlays::{ConfirmDialog, PromptDialog},
+};
+use gpui::{AnyElement, AppContext, Context, Entity, Focusable, IntoElement, Window};
 
-use super::{TITLE, Workspace};
+use super::{
+    TITLE, Workspace,
+    projects::{folder_name, tabs_of},
+};
 use crate::projects::TabId;
 
 /// What the workspace is asking.
 pub(super) enum Asking {
     RenameTab { id: TabId, field: Entity<TextInput> },
+    RenameProject { id: u64, field: Entity<TextInput> },
+    RemoveProject { id: u64 },
 }
 
 impl Workspace {
@@ -54,6 +63,26 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Asks what project `id` should be called, its folder's name beneath.
+    pub fn ask_rename_project(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(project) = self.project(id) else {
+            return;
+        };
+        let (name, folder) = (
+            project.name.clone().unwrap_or_default(),
+            folder_name(&project.folder),
+        );
+        let field = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx);
+            input.set_text(name, cx);
+            input.set_placeholder(folder, cx);
+            input
+        });
+        log::debug!("app: project {id} asks for a name");
+        self.asking = Some(Asking::RenameProject { id, field });
+        cx.notify();
+    }
+
     /// Gives the shown tab the keys again, else the workspace.
     fn refocus(&self, window: &mut Window, cx: &mut Context<Self>) {
         match self.current() {
@@ -62,29 +91,72 @@ impl Workspace {
         }
     }
 
-    pub(super) fn dialog(&self, cx: &Context<Self>) -> Option<PromptDialog> {
-        let Asking::RenameTab { id, field } = self.asking.as_ref()?;
-        let id = *id;
-        let (close, submit) = (cx.entity(), cx.entity());
-        let dialog =
-            PromptDialog::new("rename-tab", text(cx, "et.tab.rename_title", &[]), field, {
-                move |window, cx| {
-                    close.update(cx, |this, cx| {
-                        this.asking = None;
-                        this.refocus(window, cx);
-                        cx.notify();
-                    })
-                }
-            });
-        Some(
-            dialog
+    pub(super) fn dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let close = cx.entity();
+        let closed = move |window: &mut Window, cx: &mut gpui::App| {
+            close.update(cx, |this, cx| {
+                this.asking = None;
+                this.refocus(window, cx);
+                cx.notify();
+            })
+        };
+        let submit = cx.entity();
+        Some(match self.asking.as_ref()? {
+            Asking::RenameTab { id, field } => {
+                let id = *id;
+                PromptDialog::new(
+                    "rename-tab",
+                    text(cx, "et.tab.rename_title", &[]),
+                    field,
+                    closed,
+                )
                 .submit(text(cx, "et.tab.rename_submit", &[]))
                 .on_submit(move |name, window, cx| {
                     submit.update(cx, |this, cx| {
                         this.name(id, name, window, cx);
                         this.refocus(window, cx);
                     })
-                }),
-        )
+                })
+                .into_any_element()
+            }
+            Asking::RenameProject { id, field } => {
+                let id = *id;
+                let title = text(cx, "et.projects.rename_title", &[]);
+                PromptDialog::new("rename-project", title, field, closed)
+                    .submit(text(cx, "et.tab.rename_submit", &[]))
+                    .on_submit(move |name, window, cx| {
+                        submit.update(cx, |this, cx| {
+                            this.name_project(id, name, window, cx);
+                            this.refocus(window, cx);
+                        })
+                    })
+                    .into_any_element()
+            }
+            Asking::RemoveProject { id } => {
+                let id = *id;
+                let project = self.project(id)?;
+                let open = tabs_of(
+                    self.tabs.iter().map(|tab| (tab.id, &tab.home)),
+                    &project.folder,
+                );
+                let label = project.label();
+                let title = text(cx, "et.projects.remove_title", &[("name", &label)]);
+                let message = match open.len() {
+                    0 => text(cx, "et.projects.remove_body", &[]),
+                    count => text(
+                        cx,
+                        "et.projects.remove_running",
+                        &[("count", &count.to_string())],
+                    ),
+                };
+                ConfirmDialog::new("remove-project", title, message, closed)
+                    .confirm(text(cx, "et.projects.remove_confirm", &[]))
+                    .destructive()
+                    .on_confirm(move |window, cx| {
+                        submit.update(cx, |this, cx| this.remove_project(id, window, cx))
+                    })
+                    .into_any_element()
+            }
+        })
     }
 }

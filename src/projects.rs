@@ -33,10 +33,15 @@ pub struct Worktree {
     pub head: Option<String>,
 }
 
-/// The absolute form of `path`; a folder that is gone stays as it is, so a missing worktree still has a home.
+/// The absolute form of `path`; a folder that is gone keeps its name under its parent's form, so a missing worktree still has a home.
 pub fn normal(path: &Path) -> PathBuf {
-    let path = std::fs::canonicalize(path)
-        .unwrap_or_else(|_| std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()));
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| {
+        let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        match (absolute.parent(), absolute.file_name()) {
+            (Some(parent), Some(name)) => normal(parent).join(name),
+            _ => absolute,
+        }
+    });
     #[cfg(windows)]
     {
         let text = path.to_string_lossy();
@@ -56,16 +61,23 @@ pub fn home_of(projects: &[(PathBuf, Vec<PathBuf>)], folder: &Path) -> Home {
         .iter()
         .flat_map(|(project, trees)| trees.iter().map(move |tree| (project, tree)));
     let folders = projects.iter().map(|(project, _)| (project, project));
-    let mut best: Option<(usize, &PathBuf, &PathBuf)> = None;
+    // Deepest first, then a project's own folder, then the first project by path, so order never decides.
+    let mut best: Option<(usize, bool, &PathBuf, &PathBuf)> = None;
     for (project, path) in worktrees.chain(folders) {
-        if let Some(depth) = holds(path, folder)
-            && best.is_none_or(|(deepest, ..)| depth > deepest)
-        {
-            best = Some((depth, project, path));
+        let Some(depth) = holds(path, folder) else {
+            continue;
+        };
+        let own = path == project;
+        let better = best.is_none_or(|(deepest, owned, chosen, _)| {
+            (depth, own) > (deepest, owned)
+                || ((depth, own) == (deepest, owned) && project < chosen)
+        });
+        if better {
+            best = Some((depth, own, project, path));
         }
     }
     match best {
-        Some((_, project, path)) => Home::Tree {
+        Some((_, _, project, path)) => Home::Tree {
             project: project.clone(),
             path: path.clone(),
         },

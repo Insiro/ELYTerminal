@@ -131,11 +131,17 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Shows no tab: the workspace takes the keys, and the panels show the home folder.
+    /// Shows no tab: the workspace takes the keys, and the panels show the home's folder.
     pub(super) fn show_none(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
-        match dirs::home_dir() {
-            Some(home) => self.follow(&home, cx),
+        // A gone worktree's panels show its project, else the home folder.
+        let folder = match &self.selected {
+            Home::Tree { path, .. } if path.is_dir() => Some(path.clone()),
+            Home::Tree { project, .. } if project.is_dir() => Some(project.clone()),
+            _ => dirs::home_dir(),
+        };
+        match folder {
+            Some(folder) => self.follow(&folder, cx),
             None => log::error!("app: no home folder for the panels"),
         }
         log::debug!("app: home {:?} shows no tab", self.selected);

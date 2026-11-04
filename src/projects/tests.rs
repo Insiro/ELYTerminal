@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use super::{
-    Home, Worktree, claude, home_of,
+    Home, Worktree, claude, home_of, normal,
     store::{Loaded, SavedProject, SavedSpace, SavedTab, SavedTree, State, load, save},
 };
 
@@ -149,6 +149,35 @@ fn a_sibling_name_is_no_match() {
     );
     assert_eq!(home_of(&all, "/p/app3".as_ref()), Home::Others);
     assert_eq!(home_of(&all, "/q".as_ref()), Home::Others);
+}
+
+#[test]
+fn a_worktree_two_projects_list_belongs_to_the_one_it_is_whatever_the_order() {
+    let main = (
+        PathBuf::from("/p/app"),
+        vec![PathBuf::from("/p/app"), PathBuf::from("/p/app-feat")],
+    );
+    let linked = (
+        PathBuf::from("/p/app-feat"),
+        vec![PathBuf::from("/p/app"), PathBuf::from("/p/app-feat")],
+    );
+    for all in [vec![main.clone(), linked.clone()], vec![linked, main]] {
+        assert_eq!(
+            home_of(&all, "/p/app-feat/src".as_ref()),
+            tree("/p/app-feat", "/p/app-feat")
+        );
+        assert_eq!(home_of(&all, "/p/app".as_ref()), tree("/p/app", "/p/app"));
+    }
+}
+
+#[test]
+fn a_gone_folder_keeps_its_name_under_its_parent_s_form() {
+    let base = std::env::temp_dir();
+    let gone = base.join("ely-no-such-folder").join("deeper");
+    assert_eq!(
+        normal(&gone),
+        normal(&base).join("ely-no-such-folder").join("deeper")
+    );
 }
 
 #[test]

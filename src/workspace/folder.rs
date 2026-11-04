@@ -51,7 +51,7 @@ impl Workspace {
     }
 }
 
-fn selected(paths: Option<Vec<PathBuf>>) -> anyhow::Result<Option<PathBuf>> {
+pub(super) fn selected(paths: Option<Vec<PathBuf>>) -> anyhow::Result<Option<PathBuf>> {
     let Some(mut paths) = paths else {
         return Ok(None);
     };

@@ -98,12 +98,19 @@ impl Workspace {
 
     /// What the terminal's place shows while the home holds no tab.
     pub(super) fn empty(&self, cx: &Context<Self>) -> impl IntoElement {
-        let workspace = cx.entity();
+        let (workspace, adding) = (cx.entity(), cx.entity());
         let new = Button::new("empty-new-tab", text(cx, "et.session.new", &[]))
             .icon(IconName::Plus)
             .on_click(move |_, window, cx| {
                 workspace.update(cx, |this, cx| this.new_session(window, cx))
             });
+        let add = Button::new("empty-add-project", text(cx, "et.projects.add", &[]))
+            .icon(IconName::FolderPlus)
+            .variant(ButtonVariant::Ghost)
+            .on_click(move |_, window, cx| {
+                adding.update(cx, |this, cx| this.choose_project(window, cx))
+            });
+        let new = div().flex().gap_2().child(new).child(add);
         div()
             .size_full()
             .flex()
