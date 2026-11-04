@@ -1,6 +1,7 @@
 pub mod app;
 pub mod atomic;
 pub mod blur;
+pub mod docs;
 #[cfg(windows)]
 pub mod explorer;
 pub mod files;
