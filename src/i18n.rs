@@ -77,7 +77,7 @@ mod tests {
             assert_eq!(names(english), names(chinese), "{key}");
         }
         let chinese = catalogs(Language::SimplifiedChinese);
-        assert_eq!(chinese.text("et.session.new", &[]).as_ref(), "新建会话");
+        assert_eq!(chinese.text("et.session.new", &[]).as_ref(), "新建终端");
     }
 
     #[test]

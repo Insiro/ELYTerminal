@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use anyhow::Context as _;
-use gpui::{Context, EntityId, Window};
+use gpui::{Context, Window};
 
 use super::Workspace;
 use crate::{
+    projects::TabId,
     settings::{self, SettingsStore, StartIn},
     term::{
         config,
@@ -14,14 +14,14 @@ use crate::{
 };
 
 impl Workspace {
-    /// A session of the set shell, where Start in says.
+    /// A tab of the set shell in the selected home, where Start in says.
     pub(super) fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(start) = self.start_in(cx) else {
             return;
         };
         let shell = SettingsStore::get(cx).shell.clone();
         if let Err(error) = self.open(&shell, Vec::new(), start, None, window, cx) {
-            log::error!("app: no new session: {error:#}");
+            log::error!("app: no new tab: {error:#}");
         }
     }
 
@@ -52,9 +52,8 @@ impl Workspace {
         match settings.start_in {
             StartIn::Home => Some(Start::Home),
             StartIn::Session => Some(
-                self.sessions
-                    .get(self.active)
-                    .map_or(Start::Home, |session| Start::In(session.folder.clone())),
+                self.current()
+                    .map_or(Start::Home, |tab| Start::In(tab.session().folder.clone())),
             ),
             StartIn::Folder => match settings::start_folder(&settings.start_folder) {
                 Ok(folder) => Some(Start::In(folder)),
@@ -66,64 +65,58 @@ impl Workspace {
         }
     }
 
-    /// Session `id` again: the shell it runs, in the folder it last reported.
-    pub fn duplicate(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((shell, args, folder, index)) = self
-            .sessions
-            .iter()
-            .enumerate()
-            .find(|(_, session)| session.terminal.entity_id() == id)
-            .map(|(index, session)| {
-                let shell = session.shell.clone();
-                (shell, session.args.clone(), session.folder.clone(), index)
-            })
-        else {
-            log::error!("app: there is no session {id:?} to duplicate");
+    /// Tab `id` again: the shell it runs, in the folder it last reported, right after it.
+    pub fn duplicate(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(session) = self.index(id).map(|index| self.tabs[index].session()) else {
+            log::error!("app: there is no tab {} to duplicate", id.0);
             return;
         };
-        log::info!("app: session {id:?} duplicates into {}", folder.display());
-        if let Err(error) = self.open(&shell, args, Start::In(folder), Some(index + 1), window, cx)
-        {
-            log::error!("app: no duplicate session: {error:#}");
+        let (shell, args, folder) = (
+            session.shell.clone(),
+            session.args.clone(),
+            session.folder.clone(),
+        );
+        log::info!("app: tab {} duplicates into {}", id.0, folder.display());
+        if let Err(error) = self.open(&shell, args, Start::In(folder), Some(id), window, cx) {
+            log::error!("app: no duplicate tab: {error:#}");
         }
     }
 
-    /// The shown shell in `folder`, right after the shown row.
+    /// The shown tab's shell in `folder`, right after it; the set shell while no tab shows.
     pub fn here(
         &mut self,
         folder: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
-        let (shell, args) = self
-            .sessions
-            .get(self.active)
-            .map(|session| (session.shell.clone(), session.args.clone()))
-            .context("app: no active session for the chosen folder")?;
-        log::info!("app: session here {}", folder.display());
-        let at = Some(self.active + 1);
-        self.open(&shell, args, Start::In(folder), at, window, cx)
+        let (shell, args) = match self.current() {
+            Some(tab) => (tab.session().shell.clone(), tab.session().args.clone()),
+            None => (SettingsStore::get(cx).shell.clone(), Vec::new()),
+        };
+        log::info!("app: tab here {}", folder.display());
+        let after = self.current_id();
+        self.open(&shell, args, Start::In(folder), after, window, cx)
     }
 
-    /// Shows a `shell` session with `args` from `start`, at `at` or last.
+    /// Shows a `shell` tab with `args` from `start` in the selected home, after tab `after` or last.
     fn open(
         &mut self,
         shell: &str,
         args: Vec<String>,
         start: Start,
-        at: Option<usize>,
+        after: Option<TabId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
         let settings = SettingsStore::get(cx);
         let launch = launch(shell, &args, start, &cx.global::<ShellIntegration>().0)?;
         let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(settings))?;
-        self.add(pty, events, launch, args, window, cx);
-        let last = self.sessions.len() - 1;
-        if let Some(at) = at {
-            self.move_session(last, at);
+        let id = self.add(pty, events, launch, args, window, cx);
+        if let Some(at) = after.and_then(|after| self.index(after)) {
+            let tab = self.tabs.pop().expect("the tab just added");
+            self.tabs.insert(at + 1, tab);
         }
-        self.select(at.map_or(last, |at| at.min(last)), window, cx);
+        self.show(id, window, cx);
         Ok(())
     }
 }

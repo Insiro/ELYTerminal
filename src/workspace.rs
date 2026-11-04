@@ -1,19 +1,17 @@
-use std::time::Instant;
+use std::{collections::HashMap, path::Path, time::Instant};
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     i18n::text,
-    lists::List,
-    motion::Reorder,
     primitives::{FocusScope, IconName},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
     theme::ControlSize,
     typography::Caption,
 };
 use gpui::{
-    Action, AnyElement, App, AppContext, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, StatefulInteractiveElement,
-    StyleRefinement, Styled, Subscription, Task, Window, actions, div, prelude::FluentBuilder,
+    Action, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    KeyBinding, ParentElement, Render, StyleRefinement, Styled, Subscription, Task, Window,
+    actions, div, prelude::FluentBuilder,
 };
 
 use crate::{
@@ -21,19 +19,25 @@ use crate::{
     files::{Files, Here},
     git::panel::{Acted, GitPanel},
     menus,
-    sessions::{self, Session, orb},
+    projects::{Home, TabId},
+    sessions::{Session, orb},
     settings::{PanelTab, SettingsStore, window::OpenSettings},
     term::{Events, Launch, Pty, TerminalView},
 };
 
+mod dialogs;
 mod events;
 mod folder;
 mod panel;
-mod rename;
-mod reorder;
 mod session;
+mod sidebar;
+mod strip;
+mod tabs;
 mod toggles;
 mod widths;
+
+use dialogs::Asking;
+use tabs::{Body, Tab};
 
 use toggles::column_toggle;
 use widths::{Dragged, Side};
@@ -51,7 +55,7 @@ actions!(
     ]
 );
 
-/// Shows the session at this place, from 0; past the last one, the key goes on to the program.
+/// Shows the selected home's tab at this place, from 0; past the last one, the key goes on to the program.
 #[derive(Clone, Debug, PartialEq, Action)]
 #[action(namespace = elyterminal, no_json)]
 pub struct SelectSession(pub usize);
@@ -90,12 +94,16 @@ pub fn bind_keys(cx: &mut App) {
     );
 }
 
-/// The main window's content: sessions, the terminal, and Git or Files, in Ely's columns.
+/// The main window's content: homes, the tabs over the terminal, and Git or Files, in Ely's columns.
 pub struct Workspace {
     focus: FocusHandle,
-    sessions: Vec<Session>,
-    /// The session shown.
-    active: usize,
+    tabs: Vec<Tab>,
+    /// The home whose tabs the strip shows.
+    selected: Home,
+    /// The tab each home shows.
+    shown: HashMap<Home, TabId>,
+    next_tab: u64,
+    asking: Option<Asking>,
     files: Entity<Files>,
     git: Entity<GitPanel>,
     /// What the window shows of the desktop, and the blur behind it.
@@ -125,7 +133,9 @@ impl Workspace {
         let git = cx.new(|cx| GitPanel::new(launch.cwd.clone(), window, cx));
         // A change the Git panel made shows in Files' marks too.
         let acted = cx.subscribe(&git, |this, _, _: &Acted, cx| {
-            let folder = this.sessions[this.active].folder.clone();
+            let Some(folder) = this.current().map(|tab| tab.session().folder.clone()) else {
+                return;
+            };
             this.files.update(cx, |files, cx| files.show(&folder, cx));
         });
         let files = cx.new(|cx| {
@@ -140,8 +150,11 @@ impl Workspace {
         });
         let mut workspace = Self {
             focus: cx.focus_handle(),
-            sessions: Vec::new(),
-            active: 0,
+            tabs: Vec::new(),
+            selected: Home::Others,
+            shown: HashMap::new(),
+            next_tab: 0,
+            asking: None,
             files,
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
@@ -162,8 +175,8 @@ impl Workspace {
             _acted: acted,
             _here: here,
         };
-        workspace.add(pty, events, launch, Vec::new(), window, cx);
-        workspace.select(0, window, cx);
+        let first = workspace.add(pty, events, launch, Vec::new(), window, cx);
+        workspace.show(first, window, cx);
         workspace
     }
 
@@ -175,7 +188,7 @@ impl Workspace {
         args: Vec<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> TabId {
         let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
         let id = terminal.entity_id();
         let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
@@ -186,12 +199,18 @@ impl Workspace {
             .as_ref()
             .map_or_else(String::new, |(program, _)| program.clone());
         let pid = terminal.read(cx).pid();
-        log::info!("app: session {pid} opens in {}", launch.cwd.display());
-        self.sessions.push(Session {
+        let id = TabId(self.next_tab);
+        self.next_tab += 1;
+        log::info!(
+            "app: tab {} opens {pid} in {} of {:?}",
+            id.0,
+            launch.cwd.display(),
+            self.selected
+        );
+        let session = Session {
             terminal,
             title: String::new(),
             name: String::new(),
-            editing: None,
             folder: launch.cwd,
             shell,
             args,
@@ -200,16 +219,22 @@ impl Workspace {
             waiting: false,
             look: None,
             _events: events,
+        };
+        self.tabs.push(Tab {
+            id,
+            home: self.selected.clone(),
+            body: Body::Term(session),
         });
+        id
     }
 
-    /// Notes each session's mark `now`, and draws the window at each step while one shown moves.
+    /// Notes each session's mark `now`, and draws the window at each step while the drawn one moves.
     fn tick(&mut self, now: Instant, cx: &mut Context<Self>) {
-        let mut moving = false;
-        for session in &mut self.sessions {
-            moving |= session.note(now, cx);
+        for tab in &mut self.tabs {
+            tab.session_mut().note(now, cx);
         }
-        let moving = moving && SettingsStore::get(cx).show_sessions;
+        let moving = SettingsStore::get(cx).show_sessions
+            && self.drawn().is_some_and(|session| session.moves(now));
         if moving == self.ticking.is_some() {
             return;
         }
@@ -228,68 +253,15 @@ impl Workspace {
         });
     }
 
-    /// Shows session `index`, clears its bell and its waiting mark, and gives its terminal the keys.
-    pub fn select(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if index >= self.sessions.len() {
-            return;
-        }
-        if index != self.active
-            && let Some(hidden) = self.sessions.get(self.active)
-        {
-            hidden.terminal.update(cx, |view, cx| {
-                view.let_go(cx);
-                view.set_front(false, window);
-            });
-        }
-        let session = &mut self.sessions[index];
-        session.bell = false;
-        session.waiting = false;
-        session
-            .terminal
-            .update(cx, |view, _| view.set_front(true, window));
-        window.focus(&session.terminal.focus_handle(cx), cx);
-        let folder = session.folder.clone();
-        self.files.update(cx, |files, cx| files.show(&folder, cx));
-        self.git.update(cx, |git, cx| git.show(&folder, cx));
-        self.active = index;
-        log::debug!("app: session {} shown", index + 1);
-        self.retitle(window);
-        cx.notify();
+    /// Files and Git show `folder`.
+    fn follow(&mut self, folder: &Path, cx: &mut Context<Self>) {
+        self.files.update(cx, |files, cx| files.show(folder, cx));
+        self.git.update(cx, |git, cx| git.show(folder, cx));
     }
 
-    /// Closes session `index`; its program hangs up. The last one closes the window.
-    pub fn close(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if index >= self.sessions.len() {
-            return;
-        }
-        let session = self.sessions.remove(index);
-        log::info!("app: session {} closes", session.terminal.read(cx).pid());
-        // Its textures leave the window's atlas with it.
-        session
-            .terminal
-            .update(cx, |view, _| view.set_front(false, window));
-        if self.sessions.is_empty() {
-            log::info!("app: no session left; the window closes");
-            window.remove_window();
-            return;
-        }
-        let shown = index == self.active;
-        self.active = sessions::after_close(self.active, index, self.sessions.len());
-        if shown {
-            self.select(self.active, window, cx);
-        } else {
-            cx.notify();
-        }
-    }
-
-    /// Its sessions, in their rows' order.
-    pub fn sessions(&self) -> &[Session] {
-        &self.sessions
-    }
-
-    /// What the shown session is called.
+    /// What the shown tab is called.
     fn title(&self) -> &str {
-        self.sessions.get(self.active).map_or(TITLE, Session::named)
+        self.current().map_or(TITLE, |tab| tab.session().named())
     }
 
     fn retitle(&self, window: &mut Window) {
@@ -298,13 +270,6 @@ impl Workspace {
             log::debug!("app: the title is {title:?}");
             window.set_window_title(title);
         }
-    }
-
-    /// Shows the next session, or the one before, round the ends.
-    fn step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let count = self.sessions.len();
-        let by = if forward { 1 } else { count - 1 };
-        self.select((self.active + by) % count, window, cx);
     }
 }
 
@@ -351,43 +316,15 @@ impl Render for Workspace {
             .children(gear)
             .child(right);
         let mut shell = ColumnShell::new("workspace").glass();
-        let shown = self
-            .sessions
-            .get(self.active)
-            .map(|session| session.terminal.clone());
+        let body = match self.current() {
+            Some(tab) => tab.session().terminal.clone().into_any_element(),
+            None => self.empty(cx).into_any_element(),
+        };
         let mut terminal = ShellColumn::new("terminal")
             .title(self.title().to_string())
-            .children(shown);
+            .child(self.tab_strip(cx))
+            .child(div().flex_1().min_h_0().child(body));
         if settings.show_sessions {
-            let home = dirs::home_dir();
-            let rows: Vec<(String, AnyElement)> = self
-                .sessions
-                .iter()
-                .enumerate()
-                .map(|(index, session)| {
-                    let active = index == self.active;
-                    let pid = session.terminal.read(cx).pid();
-                    let row =
-                        sessions::row(&workspace, index, session, active, home.as_deref(), now, cx);
-                    (pid.to_string(), row.into_any_element())
-                })
-                .collect();
-            // Only a drag needs Reorder; List keeps its own gap.
-            let list = if settings.drag_sessions {
-                let dragged = workspace.clone();
-                rows.into_iter()
-                    .fold(
-                        Reorder::new("session-rows").on_reorder(move |from, to, _, cx| {
-                            dragged.update(cx, |this, cx| this.reorder(from, to, cx))
-                        }),
-                        |list, (key, row)| list.row(key, div().pb_0p5().child(row)),
-                    )
-                    .into_any_element()
-            } else {
-                List::new()
-                    .children(rows.into_iter().map(|(_, row)| row))
-                    .into_any_element()
-            };
             let new = IconButton::new("new-session", IconName::Plus)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)
@@ -395,33 +332,19 @@ impl Render for Workspace {
                 .on_click(move |_, window, cx| {
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
-            let mut column = self
+            let column = self
                 .side_column(Side::Sessions, cx)
                 .leading(left)
-                .action(new);
-            if let Some(profiles) = crate::profiles::button(&cx.entity(), &self.found, cx) {
-                column = column.action(profiles);
-            }
-            shell = shell.column(
-                column.child(
-                    div()
-                        .id("sessions")
-                        .size_full()
-                        .overflow_y_scroll()
-                        .p_2()
-                        .child(list),
-                ),
-            );
+                .action(new)
+                .child(self.homes(now, cx));
+            shell = shell.column(column);
         } else {
             terminal = terminal.leading(left);
         }
         if settings.show_panel {
             let tab = settings.panel;
             let switch = self.panel_tabs(cx);
-            let quiet = self
-                .sessions
-                .get(self.active)
-                .is_some_and(|session| !session.reports);
+            let quiet = self.current().is_some_and(|tab| !tab.session().reports);
             let caption = || {
                 Caption::new(text(cx, "et.panel.no_folder", &[]))
                     .px_3()
@@ -464,24 +387,43 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &TogglePanel, _, cx| {
                 this.toggle(|settings| settings.show_panel = !settings.show_panel, cx)
             }))
-            .on_action(cx.listener(|this, _: &NewSession, window, cx| this.new_session(window, cx)))
-            .on_action(
-                cx.listener(|this, _: &CloseSession, window, cx| {
-                    this.close(this.active, window, cx)
-                }),
-            )
-            .on_action(cx.listener(|this, _: &NextSession, window, cx| this.step(true, window, cx)))
-            .on_action(
-                cx.listener(|this, _: &PreviousSession, window, cx| this.step(false, window, cx)),
-            )
+            .on_action(cx.listener(|this, _: &NewSession, window, cx| {
+                if this.asking.is_none() {
+                    this.new_session(window, cx);
+                }
+            }))
+            // Only a shown tab closes, so the menu item waits for one.
+            .when_some(self.current_id(), |root, id| {
+                root.on_action(cx.listener(move |this, _: &CloseSession, window, cx| {
+                    if this.asking.is_none() {
+                        this.close(id, window, cx);
+                    }
+                }))
+            })
+            .on_action(cx.listener(|this, _: &NextSession, window, cx| {
+                if this.asking.is_none() {
+                    this.step(true, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &PreviousSession, window, cx| {
+                if this.asking.is_none() {
+                    this.step(false, window, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &LastSession, window, cx| {
-                this.select(this.sessions.len().saturating_sub(1), window, cx)
+                if this.asking.is_none()
+                    && let Some(&last) = this.strip().last()
+                {
+                    this.show(last, window, cx);
+                }
             }))
             .on_action(cx.listener(|this, select: &SelectSession, window, cx| {
-                if select.0 < this.sessions.len() {
-                    this.select(select.0, window, cx);
-                } else {
-                    cx.propagate();
+                if this.asking.is_some() {
+                    return;
+                }
+                match this.strip().get(select.0) {
+                    Some(&id) => this.show(id, window, cx),
+                    None => cx.propagate(),
                 }
             }))
             .child(
@@ -489,5 +431,6 @@ impl Render for Workspace {
                     .when(self.background.see_through(), ResizeBorder::glass)
                     .child(FocusScope::new(&self.focus).root().size_full().child(shell)),
             )
+            .children(self.dialog(cx))
     }
 }

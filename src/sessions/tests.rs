@@ -29,14 +29,6 @@ fn control_characters_show_as_their_pictures() {
 }
 
 #[test]
-fn closing_shows_the_next_session_or_keeps_the_shown_one() {
-    assert_eq!(after_close(2, 0, 3), 1, "one before it went");
-    assert_eq!(after_close(1, 1, 3), 1, "it went: the next one");
-    assert_eq!(after_close(3, 3, 3), 2, "the last went: the one before");
-    assert_eq!(after_close(1, 2, 3), 1, "one after it went");
-}
-
-#[test]
 fn the_mark_shows_the_most_pressing_look() {
     let record = |state, progress| Record {
         state,
@@ -160,4 +152,18 @@ fn hover_lists_each_record_with_its_app_then_a_failed_command() {
     let lines = hover(&records, None, &english);
     assert_eq!(lines.len(), LISTED + 1);
     assert_eq!(lines[LISTED].to_string(), "3 more");
+}
+
+#[test]
+fn a_need_ranks_error_then_waiting_then_a_bell() {
+    assert_eq!(need(Some(Look::Error), true, true), Need::Error);
+    assert_eq!(need(Some(Look::Waiting), false, true), Need::Waiting);
+    assert_eq!(need(Some(Look::Working(None)), true, false), Need::Waiting);
+    assert_eq!(need(Some(Look::Working(None)), false, true), Need::Bell);
+    assert_eq!(need(Some(Look::Working(None)), false, false), Need::Working);
+    assert_eq!(need(Some(Look::Done), false, false), Need::Done);
+    assert_eq!(need(Some(Look::Idle), false, false), Need::Calm);
+    assert_eq!(need(None, false, true), Need::Bell);
+    assert!(Need::Error > Need::Waiting && Need::Waiting > Need::Bell);
+    assert!(Need::Bell > Need::Working && Need::Working > Need::Done);
 }

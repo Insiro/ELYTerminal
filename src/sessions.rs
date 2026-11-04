@@ -4,39 +4,29 @@ use std::{
 };
 
 use ely_gpui_component::{
-    buttons::{ButtonVariant, IconButton},
-    forms::{Input, TextInput},
-    i18n::{I18n, text},
-    lists::ListItem,
-    menus::ContextMenu,
-    primitives::{Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, IconSize},
+    i18n::I18n,
+    primitives::Tooltip,
+    theme::{ActiveTheme, IconSize},
 };
-use gpui::{
-    AnyElement, App, Entity, IntoElement, MouseButton, SharedString, Subscription, div, prelude::*,
-    rems,
-};
+use gpui::{AnyElement, App, Entity, SharedString, Subscription, div, prelude::*, rems};
 
 use crate::{
-    settings::SettingsStore,
     term::{Kind, Record, Records, State, TerminalView},
-    workspace::{TITLE, Workspace},
+    workspace::TITLE,
 };
 
-mod menu;
+pub mod menu;
 pub mod orb;
 
 use orb::Look;
 
-/// A program on its own terminal, as the sessions column lists it.
+/// A program on its own terminal, as a tab shows it.
 pub struct Session {
     pub terminal: Entity<TerminalView>,
     /// The program's title; empty while it names none.
     pub title: String,
     /// The name the user gave it; empty leaves the title to its program.
     pub name: String,
-    /// The field its row shows while the user renames it.
-    pub editing: Option<(Entity<TextInput>, Subscription)>,
     /// The folder it reports, else the one it started in.
     pub folder: PathBuf,
     /// The program it runs, as its path; empty for the login shell.
@@ -70,14 +60,47 @@ impl Session {
         look(view.records().shown().map(|(_, record)| record), failed)
     }
 
-    /// Notes the look its mark takes `now`; true while the mark moves.
-    pub fn note(&mut self, now: Instant, cx: &App) -> bool {
+    /// Notes the look its mark takes `now`.
+    pub fn note(&mut self, now: Instant, cx: &App) {
         let shows = self.looks(cx);
         if self.look.map(|(shown, _)| shown) != shows {
             self.look = shows.map(|shows| (shows, now));
         }
+    }
+
+    /// Its mark moves `now`.
+    pub fn moves(&self, now: Instant) -> bool {
         self.look
             .is_some_and(|(look, since)| orb::moves(look, now.saturating_duration_since(since)))
+    }
+
+    /// What it asks of the user now.
+    pub fn need(&self) -> Need {
+        need(self.look.map(|(look, _)| look), self.waiting, self.bell)
+    }
+}
+
+/// What a tab asks of the user, the least pressing first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Need {
+    Calm,
+    Done,
+    Working,
+    Bell,
+    Waiting,
+    Error,
+}
+
+/// The need of a mark's `look`, with a wait or a bell heard while hidden.
+pub fn need(look: Option<Look>, waiting: bool, bell: bool) -> Need {
+    match look {
+        Some(Look::Error) => Need::Error,
+        Some(Look::Waiting) => Need::Waiting,
+        _ if waiting => Need::Waiting,
+        _ if bell => Need::Bell,
+        Some(Look::Working(_)) => Need::Working,
+        Some(Look::Done) => Need::Done,
+        Some(Look::Idle) | None => Need::Calm,
     }
 }
 
@@ -106,100 +129,6 @@ pub fn one_line(text: &str) -> String {
         .collect()
 }
 
-/// The session shown once session `closed` of `left + 1` is gone, `active` having been shown.
-pub fn after_close(active: usize, closed: usize, left: usize) -> usize {
-    if closed < active || active == left {
-        active - 1
-    } else {
-        active
-    }
-}
-
-/// Session `index`'s row: its title and folder, the mark of its status, a bell while one rang unseen, a button that closes it.
-pub fn row(
-    workspace: &Entity<Workspace>,
-    index: usize,
-    session: &Session,
-    active: bool,
-    home: Option<&Path>,
-    now: Instant,
-    cx: &App,
-) -> impl IntoElement {
-    let terminal = session.terminal.read(cx);
-    let pid = terminal.pid() as usize;
-    let (select, close) = (workspace.clone(), workspace.clone());
-    let editing = session.editing.is_some();
-    let item = ListItem::new(("session", pid), session.named().to_string())
-        .description(shown(&session.folder, home))
-        .selected(active)
-        .strong(session.bell || session.waiting)
-        // A press in the field it renames with stays the field's.
-        .on_click(
-            move |event, window, cx| match (editing, event.click_count()) {
-                (true, _) => {}
-                (false, 2..) => select.update(cx, |this, cx| this.rename(index, window, cx)),
-                (false, _) => select.update(cx, |this, cx| this.select(index, window, cx)),
-            },
-        )
-        .trailing(
-            IconButton::new(("close-session", pid), IconName::X)
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
-                .tooltip(text(cx, "et.session.close", &[]))
-                .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    close.update(cx, |this, cx| this.close(index, window, cx))
-                }),
-        );
-    let item = match &session.editing {
-        Some((input, _)) => item.editor(editor(workspace, session, input)),
-        None => item,
-    };
-    let mark = mark(session, now, cx);
-    let bell = session
-        .bell
-        .then(|| Icon::new(IconName::Bell).color(cx.theme().colors.warning));
-    let item = if mark.is_none() && bell.is_none() {
-        item
-    } else {
-        item.leading(
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .children(mark)
-                .children(bell),
-        )
-    };
-    if !SettingsStore::get(cx).session_menu {
-        return item.into_any_element();
-    }
-    let id = session.terminal.entity_id();
-    ContextMenu::new(("session-menu", pid), menu::row(workspace, id, cx))
-        .w_full()
-        .child(item)
-        .into_any_element()
-}
-
-/// The field a session's row renames it with; Escape drops what it holds.
-fn editor(
-    workspace: &Entity<Workspace>,
-    session: &Session,
-    input: &Entity<TextInput>,
-) -> impl IntoElement {
-    let (workspace, id) = (workspace.clone(), session.terminal.entity_id());
-    div()
-        // A press selecting text stays the field's: the row would lift it for a drag.
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_key_down(move |event, window, cx| {
-            if event.keystroke.key == "escape" {
-                cx.stop_propagation();
-                workspace.update(cx, |this, cx| this.end_rename(id, false, window, cx));
-            }
-        })
-        .child(Input::new(input).size(ControlSize::Sm))
-}
-
 /// What a mark shows: the most pressing record's state, else a failed last command.
 pub fn look(record: Option<&Record>, failed: bool) -> Option<Look> {
     Some(
@@ -216,7 +145,7 @@ pub fn look(record: Option<&Record>, failed: bool) -> Option<Look> {
 }
 
 /// The session's mark: its look's dots in its state's color; hover lists the records.
-fn mark(session: &Session, now: Instant, cx: &App) -> Option<AnyElement> {
+pub fn mark(session: &Session, now: Instant, cx: &App) -> Option<AnyElement> {
     let (look, since) = session.look?;
     let theme = cx.theme();
     let colors = &theme.colors;

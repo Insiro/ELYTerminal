@@ -190,12 +190,7 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
     };
     let workspace = main.entity(cx)?;
     let feeling = |workspace: &Workspace, cx: &App| {
-        mood(
-            workspace
-                .sessions()
-                .iter()
-                .filter_map(|session| session.looks(cx)),
-        )
+        mood(workspace.sessions().filter_map(|session| session.looks(cx)))
     };
     let start = feeling(workspace.read(cx), cx);
     let pet = cx.open_window(options, |_, cx| {
