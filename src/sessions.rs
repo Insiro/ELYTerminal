@@ -29,6 +29,10 @@ pub struct Session {
     pub name: String,
     /// The folder it reports, else the one it started in.
     pub folder: PathBuf,
+    /// The folder it started in, which `workspace.json` keeps.
+    pub start: PathBuf,
+    /// The Claude session it runs, kept as `workspace.json` gave it.
+    pub claude: Option<String>,
     /// The program it runs, as its path; empty for the login shell.
     pub shell: String,
     /// The arguments its profile gave the program.

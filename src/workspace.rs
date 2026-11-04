@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path, time::Instant};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
@@ -20,15 +24,15 @@ use crate::{
     git::panel::{Acted, GitPanel},
     menus,
     projects::{Home, TabId},
-    sessions::{Session, orb},
+    sessions::orb,
     settings::{PanelTab, SettingsStore, window::OpenSettings},
-    term::{Events, Launch, Pty, TerminalView},
 };
 
 mod dialogs;
 mod events;
 mod folder;
 mod panel;
+mod persist;
 mod projects;
 mod refresh;
 mod session;
@@ -39,6 +43,8 @@ mod toggles;
 mod widths;
 
 use dialogs::Asking;
+pub use persist::Boot;
+use persist::{Dormant, Persist};
 use projects::Project;
 use tabs::{Body, Tab};
 
@@ -111,6 +117,10 @@ pub struct Workspace {
     next_project: u64,
     /// When an activation last listed every project's worktrees.
     refreshed: Option<Instant>,
+    /// The saved tabs of each home not woken yet.
+    dormant: HashMap<Home, Dormant>,
+    /// Saves `workspace.json`, once restored.
+    persist: Option<Persist>,
     asking: Option<Asking>,
     files: Entity<Files>,
     git: Entity<GitPanel>,
@@ -131,15 +141,9 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// The window's content with its first session, `pty` started from `launch`.
-    pub fn new(
-        pty: Pty,
-        events: Events,
-        launch: Launch,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let git = cx.new(|cx| GitPanel::new(launch.cwd.clone(), window, cx));
+    /// The window's content with no tab yet, its panels in `folder` until `restore` runs.
+    pub fn new(folder: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let git = cx.new(|cx| GitPanel::new(folder.clone(), window, cx));
         // A change the Git panel made shows in Files' marks too.
         let acted = cx.subscribe(&git, |this, _, _: &Acted, cx| {
             if let Home::Tree { project, .. } = this.selected.clone() {
@@ -151,7 +155,7 @@ impl Workspace {
             this.files.update(cx, |files, cx| files.show(&folder, cx));
         });
         let files = cx.new(|cx| {
-            let mut files = Files::new(launch.cwd.clone());
+            let mut files = Files::new(folder);
             files.poll(cx);
             files
         });
@@ -160,7 +164,7 @@ impl Workspace {
                 folder::failed(error, window, cx);
             }
         });
-        let mut workspace = Self {
+        Self {
             focus: cx.focus_handle(),
             tabs: Vec::new(),
             selected: Home::Others,
@@ -169,6 +173,8 @@ impl Workspace {
             projects: Vec::new(),
             next_project: 0,
             refreshed: None,
+            dormant: HashMap::new(),
+            persist: None,
             asking: None,
             files,
             git,
@@ -194,60 +200,7 @@ impl Workspace {
                     this.refresh_all(cx);
                 }
             }),
-        };
-        let home = workspace.selected.clone();
-        let first = workspace.add(pty, events, launch, (Vec::new(), home), window, cx);
-        workspace.show(first, window, cx);
-        workspace
-    }
-
-    /// A tab of `pty` in `home`, last in the list.
-    fn add(
-        &mut self,
-        pty: Pty,
-        events: Events,
-        launch: Launch,
-        (args, home): (Vec<String>, Home),
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> TabId {
-        let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
-        let id = terminal.entity_id();
-        let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
-            this.session_event(id, event, window, cx)
-        });
-        let shell = launch
-            .program
-            .as_ref()
-            .map_or_else(String::new, |(program, _)| program.clone());
-        let pid = terminal.read(cx).pid();
-        let id = TabId(self.next_tab);
-        self.next_tab += 1;
-        log::info!(
-            "app: tab {} opens {pid} in {} of {:?}",
-            id.0,
-            launch.cwd.display(),
-            home
-        );
-        let session = Session {
-            terminal,
-            title: String::new(),
-            name: String::new(),
-            folder: launch.cwd,
-            shell,
-            args,
-            reports: launch.reports,
-            bell: false,
-            waiting: false,
-            look: None,
-            _events: events,
-        };
-        self.tabs.push(Tab {
-            id,
-            home,
-            body: Body::Term(session),
-        });
-        id
+        }
     }
 
     /// Notes each session's mark `now`, and draws the window at each step while the drawn one moves.
@@ -344,6 +297,7 @@ impl Render for Workspace {
         let mut shell = ColumnShell::new("workspace").glass();
         let body = match self.current() {
             Some(tab) => tab.session().terminal.clone().into_any_element(),
+            None if self.dormant.contains_key(&self.selected) => self.asleep(cx),
             None => self.empty(cx).into_any_element(),
         };
         let mut terminal = ShellColumn::new("terminal")

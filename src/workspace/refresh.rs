@@ -92,6 +92,7 @@ impl Workspace {
             return;
         };
         project.listing.flight = false;
+        let mut changed = false;
         let folder = project.folder.display().to_string();
         match trees {
             Err(error) => {
@@ -113,11 +114,17 @@ impl Workspace {
                     }
                     (_, Trees::Pending) => {}
                 }
-                project.trees = trees;
+                if project.trees != trees {
+                    project.trees = trees;
+                    changed = true;
+                }
             }
         }
         if std::mem::take(&mut project.listing.again) {
             self.refresh(id, cx);
+        }
+        if changed {
+            self.dirty(cx);
         }
         cx.notify();
     }

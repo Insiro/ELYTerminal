@@ -29,10 +29,12 @@ use crate::{
 mod menu;
 
 impl Workspace {
-    /// Selects `home`, showing the tab it showed last, else nothing.
+    /// Selects `home`, waking its saved tabs, showing the tab it showed last, else nothing.
     pub(super) fn select_home(&mut self, home: Home, window: &mut Window, cx: &mut Context<Self>) {
-        match self.shown.get(&home) {
-            Some(&id) => self.show(id, window, cx),
+        let woken = self.wake(&home, window, cx);
+        self.dirty(cx);
+        match woken.or_else(|| self.shown.get(&home).copied()) {
+            Some(id) => self.show(id, window, cx),
             None => {
                 if let Some(tab) = self.current() {
                     let terminal = tab.session().terminal.clone();
@@ -63,6 +65,7 @@ impl Workspace {
         self.projects.is_empty()
             || self.selected == Home::Others
             || self.tabs.iter().any(|tab| tab.home == Home::Others)
+            || self.dormant.contains_key(&Home::Others)
     }
 
     /// Some tab's orb moves `now`, so a row may draw it.
@@ -143,7 +146,8 @@ impl Workspace {
     ) -> AnyElement {
         let workspace = cx.entity();
         let (id, home) = (project.id, project.home());
-        let trees = children(project, self.tabs.iter().map(|tab| &tab.home));
+        let homes = self.tabs.iter().map(|tab| &tab.home);
+        let trees = children(project, homes.chain(self.dormant.keys()));
         let toggle = workspace.clone();
         let disclosure = (!trees.is_empty()).then(|| {
             div()

@@ -23,6 +23,7 @@ pub(super) struct Project {
 }
 
 /// What git said of a project's folder.
+#[derive(Debug, PartialEq)]
 pub(super) enum Trees {
     /// Not listed yet.
     Pending,
@@ -268,6 +269,7 @@ impl Workspace {
                     listing: Listing::default(),
                 });
                 self.refresh(id, cx);
+                self.dirty(cx);
                 id
             }
         };
@@ -290,6 +292,7 @@ impl Workspace {
         if project.open {
             self.refresh(id, cx);
         }
+        self.dirty(cx);
         cx.notify();
     }
 
@@ -301,6 +304,7 @@ impl Workspace {
         let project = self.projects.remove(from);
         log::info!("app: project {} moves to {to}", project.folder.display());
         self.projects.insert(to, project);
+        self.dirty(cx);
         cx.notify();
     }
 
@@ -323,6 +327,7 @@ impl Workspace {
             project.folder.display(),
             project.name
         );
+        self.dirty(cx);
         self.retitle(window);
         cx.notify();
     }
@@ -365,6 +370,8 @@ impl Workspace {
         }
         self.projects.remove(at);
         self.shown.retain(|home, _| !inside(home));
+        self.dormant.retain(|home, _| !inside(home));
+        self.dirty(cx);
         cx.notify();
     }
 }

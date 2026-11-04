@@ -59,6 +59,7 @@ impl Workspace {
         } else {
             log::info!("app: tab {} is named {:?}", id.0, session.name);
         }
+        self.dirty(cx);
         self.retitle(window);
         cx.notify();
     }

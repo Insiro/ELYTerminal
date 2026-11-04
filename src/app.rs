@@ -13,9 +13,9 @@ use crate::term::mac;
 use crate::{
     blur, i18n, menus,
     settings::{self, Place, SettingsStore},
-    term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
+    term::{ICONS, MONO, input, shell::ShellIntegration},
     themes, updates,
-    workspace::{self, TITLE, Workspace},
+    workspace::{self, Boot, TITLE, Workspace},
 };
 
 pub mod args;
@@ -128,8 +128,8 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Opens the main window running `launch`.
-pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
+/// Opens the main window with what `boot` restores.
+pub fn open(boot: Boot, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
     let (bounds, display_id) = opening_bounds(cx);
     let background = blur::appearance(SettingsStore::get(cx));
     let least = px(*settings::WINDOW.start());
@@ -148,7 +148,7 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         window_background: background,
         ..Default::default()
     };
-    let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
+    let folder = dirs::home_dir().context("app: the platform names no home folder")?;
     // Windows' wheel settings, read where gpui reads its own.
     #[cfg(windows)]
     crate::term::keep_wheel()?;
@@ -159,9 +159,12 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
             .detach();
         cx.new(|cx| {
             keep_bounds(window, cx);
-            Workspace::new(pty, events, launch, window, cx)
+            Workspace::new(folder, window, cx)
         })
     })?;
+    window.update(cx, |workspace, window, cx| {
+        workspace.restore(boot, window, cx)
+    })??;
     crate::pet::follow(window, cx);
     log::info!(
         "app: main window open at {:?}, blur: {background:?} on {}",

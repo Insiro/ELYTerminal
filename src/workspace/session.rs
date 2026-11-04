@@ -1,13 +1,14 @@
 use std::path::PathBuf;
 
-use gpui::{Context, Window};
+use gpui::{AppContext, Context, Window};
 
-use super::{Workspace, projects::notice};
+use super::{Body, Tab, Workspace, projects::notice};
 use crate::{
     projects::{Home, TabId},
+    sessions::Session,
     settings::{self, SettingsStore, StartIn},
     term::{
-        config,
+        Events, Launch, Pty, TerminalView, config,
         shell::{ShellIntegration, Start, launch},
         spawn,
     },
@@ -16,14 +17,23 @@ use crate::{
 impl Workspace {
     /// A tab of the set shell in the selected home, where Start in says.
     pub(super) fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Err(error) = self.new_tab(window, cx) {
+            log::error!("app: no new tab: {error:#}");
+        }
+    }
+
+    /// `new_session`, its failure given back; a folder the user was told is missing opens nothing.
+    pub(super) fn new_tab(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> anyhow::Result<()> {
         let Some(start) = self.start_in(window, cx) else {
-            return;
+            return Ok(());
         };
         let shell = SettingsStore::get(cx).shell.clone();
         let place = (self.selected.clone(), None);
-        if let Err(error) = self.open(&shell, Vec::new(), start, place, window, cx) {
-            log::error!("app: no new tab: {error:#}");
-        }
+        self.open(&shell, Vec::new(), start, place, window, cx)
     }
 
     /// A profile's session: `shell` with `args`, in `folder` or where Start in says.
@@ -112,7 +122,22 @@ impl Workspace {
     }
 
     /// Shows a `shell` tab with `args` from `start` in `home`, after tab `after` or last; the home changes only once it started.
-    fn open(
+    pub(super) fn open(
+        &mut self,
+        shell: &str,
+        args: Vec<String>,
+        start: Start,
+        place: (Home, Option<TabId>),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> anyhow::Result<()> {
+        let id = self.begin(shell, args, start, place, window, cx)?;
+        self.show(id, window, cx);
+        Ok(())
+    }
+
+    /// A `shell` tab with `args` from `start` in `home`, after tab `after` or last, not shown.
+    pub(super) fn begin(
         &mut self,
         shell: &str,
         args: Vec<String>,
@@ -120,7 +145,7 @@ impl Workspace {
         (home, after): (Home, Option<TabId>),
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<TabId> {
         let settings = SettingsStore::get(cx);
         let launch = launch(shell, &args, start, &cx.global::<ShellIntegration>().0)?;
         let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(settings))?;
@@ -129,7 +154,58 @@ impl Workspace {
             let tab = self.tabs.pop().expect("the tab just added");
             self.tabs.insert(at + 1, tab);
         }
-        self.show(id, window, cx);
-        Ok(())
+        self.dirty(cx);
+        Ok(id)
+    }
+
+    /// A tab of `pty` in `home`, last in the list.
+    pub(super) fn add(
+        &mut self,
+        pty: Pty,
+        events: Events,
+        launch: Launch,
+        (args, home): (Vec<String>, Home),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> TabId {
+        let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
+        let id = terminal.entity_id();
+        let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
+            this.session_event(id, event, window, cx)
+        });
+        let shell = launch
+            .program
+            .as_ref()
+            .map_or_else(String::new, |(program, _)| program.clone());
+        let pid = terminal.read(cx).pid();
+        let id = TabId(self.next_tab);
+        self.next_tab += 1;
+        log::info!(
+            "app: tab {} opens {pid} in {} of {:?}",
+            id.0,
+            launch.cwd.display(),
+            home
+        );
+        let session = Session {
+            terminal,
+            title: String::new(),
+            name: String::new(),
+            folder: launch.cwd.clone(),
+            start: launch.cwd,
+            claude: None,
+            shell,
+            args,
+            reports: launch.reports,
+            bell: false,
+            waiting: false,
+            look: None,
+            _events: events,
+        };
+        self.tabs.push(Tab {
+            id,
+            home,
+            body: Body::Term(session),
+        });
+        id
     }
 }

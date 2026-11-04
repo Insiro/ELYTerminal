@@ -2,11 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use ely_gpui_component::Assets;
-use elyterminal::{
-    app,
-    settings::{self, SettingsStore, StartIn},
-    term::shell::{ShellIntegration, Start, launch},
-};
+use elyterminal::{app, workspace::Boot};
 use gpui::App;
 
 /// A Linux app with no display server fails at start instead of running headless.
@@ -23,20 +19,8 @@ fn application() -> gpui::Application {
 fn run(cx: &mut App) -> anyhow::Result<()> {
     let named = app::args::folder(std::env::args_os().skip(1))?;
     app::start(cx)?;
-    let settings = SettingsStore::get(cx);
-    // No session shows yet, so Session's folder means home.
-    let start = match (named, settings.start_in) {
-        (Some(folder), _) => Start::In(folder),
-        (None, StartIn::Folder) => Start::In(settings::start_folder(&settings.start_folder)?),
-        (None, StartIn::Home | StartIn::Session) => Start::Home,
-    };
-    let launch = launch(
-        &settings.shell,
-        &[],
-        start,
-        &cx.global::<ShellIntegration>().0,
-    )?;
-    app::open(launch, cx)?;
+    let boot = Boot::load(named)?;
+    app::open(boot, cx)?;
     cx.activate(true);
     Ok(())
 }

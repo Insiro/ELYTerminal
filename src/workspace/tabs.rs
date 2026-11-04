@@ -127,6 +127,7 @@ impl Workspace {
         let folder = session.folder.clone();
         self.follow(&folder, cx);
         log::debug!("app: tab {} shown", id.0);
+        self.dirty(cx);
         self.retitle(window);
         cx.notify();
     }
@@ -174,6 +175,7 @@ impl Workspace {
         session
             .terminal
             .update(cx, |view, _| view.set_front(false, window));
+        self.dirty(cx);
         if self.shown.get(&home) != Some(&id) {
             cx.notify();
             return;
@@ -218,6 +220,7 @@ impl Workspace {
             tab.id.0
         );
         self.tabs.insert(into, tab);
+        self.dirty(cx);
         cx.notify();
     }
 }

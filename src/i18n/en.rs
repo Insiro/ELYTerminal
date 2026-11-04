@@ -250,6 +250,18 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.projects.folder_missing",
         "The workspace's folder is missing",
     ),
+    ("et.empty.missing", "The workspace's folder is missing"),
+    (
+        "et.empty.missing_hint",
+        "{path} is gone; its saved tabs wait until it returns.",
+    ),
+    ("et.empty.forget", "Forget tabs"),
+    ("et.store.corrupt", "The workspace file was unusable"),
+    (
+        "et.store.corrupt_body",
+        "It was moved to {path}; projects and tabs start empty.",
+    ),
+    ("et.store.wake_failed", "Some saved tabs did not start"),
     ("et.tip.hide_sessions", "Hide projects"),
     ("et.tip.show_sessions", "Show projects"),
     ("et.tip.hide_panel", "Hide Git and Files"),

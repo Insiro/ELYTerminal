@@ -9,6 +9,7 @@ fn main() {
         app,
         settings::window::SettingsWindow,
         term::{Launch, Quote},
+        workspace::Boot,
     };
     use gpui::AnyWindowHandle;
 
@@ -36,7 +37,9 @@ fn main() {
         .run(move |cx: &mut gpui::App| {
             ely_gpui_component::init(cx).expect("Ely starts");
             app::start(cx).expect("the app starts");
-            let main: AnyWindowHandle = app::open(launch, cx).expect("the window opens").into();
+            let mut boot = Boot::load(None).expect("workspace.json reads");
+            boot.launch = Some(launch);
+            let main: AnyWindowHandle = app::open(boot, cx).expect("the window opens").into();
             cx.spawn(async move |cx| {
                 let number = |aim: AnyWindowHandle, cx: &mut gpui::AsyncApp| {
                     let number = aim.update(cx, |_, window, _| capture::number(window));

@@ -232,6 +232,18 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.projects.failed", "无法列出工作树"),
     ("et.projects.add_failed", "无法添加项目"),
     ("et.projects.folder_missing", "工作区的文件夹不存在"),
+    ("et.empty.missing", "工作区的文件夹不存在"),
+    (
+        "et.empty.missing_hint",
+        "{path} 已不存在；保存的标签页会等它回来。",
+    ),
+    ("et.empty.forget", "忘记标签页"),
+    ("et.store.corrupt", "工作区文件无法使用"),
+    (
+        "et.store.corrupt_body",
+        "它已移到 {path}；项目和标签页从空开始。",
+    ),
+    ("et.store.wake_failed", "部分保存的标签页未能启动"),
     ("et.tip.hide_sessions", "隐藏项目"),
     ("et.tip.show_sessions", "显示项目"),
     ("et.tip.hide_panel", "隐藏 Git 和文件"),
