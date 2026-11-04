@@ -84,7 +84,7 @@ impl Workspace {
         id
     }
 
-    /// A link in `doc` to another file opens it as a tab.
+    /// A link in `doc` to another file opens it as a tab; a change, a file gone among them, draws the strip again.
     pub(super) fn follow_links(
         &self,
         doc: &Entity<Document>,
@@ -95,6 +95,7 @@ impl Workspace {
             this.open_doc(path.clone(), window, cx)
         })
         .detach();
+        cx.observe(doc, |_, _, cx| cx.notify()).detach();
     }
 }
 
