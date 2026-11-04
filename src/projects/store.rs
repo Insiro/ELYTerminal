@@ -55,7 +55,8 @@ pub enum SavedTab {
         name: String,
         shell: String,
         args: Vec<String>,
-        folder: PathBuf,
+        /// The folder it started in; none for home, which `wsl` takes as its distribution's.
+        folder: Option<PathBuf>,
         claude: Option<String>,
     },
 }
@@ -113,7 +114,9 @@ impl State {
 
 fn check_tabs(tabs: &[SavedTab]) -> Result<(), String> {
     for SavedTab::Terminal { folder, claude, .. } in tabs {
-        absolute(folder)?;
+        if let Some(folder) = folder {
+            absolute(folder)?;
+        }
         if let Some(id) = claude
             && !claude::valid(id)
         {

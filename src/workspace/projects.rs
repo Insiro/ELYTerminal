@@ -40,6 +40,9 @@ pub(super) struct Tree {
     pub path: PathBuf,
     /// Its branch, else its head.
     pub label: String,
+    /// What git listed, which `workspace.json` caches.
+    pub branch: Option<String>,
+    pub head: Option<String>,
     /// Git calls it prunable, or its folder is gone.
     pub missing: bool,
 }
@@ -154,6 +157,8 @@ pub(super) fn children<'a>(
             rows.push(Tree {
                 path: path.clone(),
                 label: folder_name(path),
+                branch: None,
+                head: None,
                 missing: true,
             });
         }

@@ -256,6 +256,13 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "{path} is gone; its saved tabs wait until it returns.",
     ),
     ("et.empty.forget", "Forget tabs"),
+    ("et.empty.failed", "Saved tabs did not start"),
+    (
+        "et.empty.failed_hint",
+        "Their errors showed as they woke; retry, or forget them.",
+    ),
+    ("et.empty.retry", "Retry"),
+    ("et.session.start_folder", "The Start in folder is unusable"),
     ("et.store.corrupt", "The workspace file was unusable"),
     (
         "et.store.corrupt_body",

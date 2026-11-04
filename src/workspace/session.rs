@@ -78,7 +78,7 @@ impl Workspace {
             StartIn::Folder => match settings::start_folder(&settings.start_folder) {
                 Ok(folder) => Some(Start::In(folder)),
                 Err(error) => {
-                    log::error!("app: no new session: {error:#}");
+                    notice("et.session.start_folder", error, window, cx);
                     None
                 }
             },
@@ -146,10 +146,18 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<TabId> {
+        // A saved home wakes first, so its tabs come before this one.
+        if self.dormant.contains_key(&home) {
+            let _ = self.wake(&home, window, cx);
+        }
         let settings = SettingsStore::get(cx);
+        let started = match &start {
+            Start::Home => None,
+            Start::In(folder) => Some(folder.clone()),
+        };
         let launch = launch(shell, &args, start, &cx.global::<ShellIntegration>().0)?;
         let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(settings))?;
-        let id = self.add(pty, events, launch, (args, home), window, cx);
+        let id = self.add(pty, events, launch, (args, home, started), window, cx);
         if let Some(at) = after.and_then(|after| self.index(after)) {
             let tab = self.tabs.pop().expect("the tab just added");
             self.tabs.insert(at + 1, tab);
@@ -164,7 +172,7 @@ impl Workspace {
         pty: Pty,
         events: Events,
         launch: Launch,
-        (args, home): (Vec<String>, Home),
+        (args, home, start): (Vec<String>, Home, Option<PathBuf>),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> TabId {
@@ -190,8 +198,8 @@ impl Workspace {
             terminal,
             title: String::new(),
             name: String::new(),
-            folder: launch.cwd.clone(),
-            start: launch.cwd,
+            folder: launch.cwd,
+            start,
             claude: None,
             shell,
             args,

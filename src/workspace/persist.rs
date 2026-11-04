@@ -7,7 +7,12 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use ely_gpui_component::{buttons::Button, feedback::EmptyState, i18n::text, primitives::IconName};
+use ely_gpui_component::{
+    buttons::{Button, ButtonVariant},
+    feedback::EmptyState,
+    i18n::text,
+    primitives::IconName,
+};
 use gpui::{
     AnyElement, Context, IntoElement, ParentElement, Styled, Subscription, Task, Window, div,
 };
@@ -15,7 +20,11 @@ use gpui::{
 pub(super) use shape::Dormant;
 use shape::{parts, saved, state};
 
-use super::{Workspace, projects::notice};
+use super::{
+    Workspace,
+    projects::notice,
+    tabs::{neighbor, strip},
+};
 use crate::{
     projects::{
         Home, TabId,
@@ -61,6 +70,8 @@ impl Boot {
 struct Disk {
     written: u64,
     mtime: Option<SystemTime>,
+    /// What the last save wrote, so an unchanged state writes nothing.
+    last: Option<State>,
 }
 
 /// Writes saves in their order: one older than the last written is dropped.
@@ -72,20 +83,24 @@ pub(super) struct Writer {
 
 impl Writer {
     pub fn new(path: PathBuf, mtime: Option<SystemTime>) -> Self {
-        let disk = Disk { written: 0, mtime };
+        let disk = Disk {
+            written: 0,
+            mtime,
+            last: None,
+        };
         Self {
             path,
             disk: Arc::new(Mutex::new(disk)),
         }
     }
 
-    /// Writes `state` as save `number`; false when a later save is written already.
+    /// Writes `state` as save `number`; false when a later save is written already, or it holds the same.
     pub fn write(&self, number: u64, state: &State) -> anyhow::Result<bool> {
         let mut disk = self
             .disk
             .lock()
             .map_err(|_| anyhow::anyhow!("workspace: a save panicked before"))?;
-        if number <= disk.written {
+        if number <= disk.written || disk.last.as_ref() == Some(state) {
             return Ok(false);
         }
         let now = modified(&self.path);
@@ -98,6 +113,7 @@ impl Writer {
         store::save(&self.path, state)?;
         disk.written = number;
         disk.mtime = modified(&self.path);
+        disk.last = Some(state.clone());
         Ok(true)
     }
 }
@@ -111,6 +127,10 @@ pub(super) struct Persist {
     writer: Writer,
     number: u64,
     saving: Option<Task<()>>,
+    /// The window began closing or the app quitting, and the last save is written: programs ending now change nothing kept.
+    closed: bool,
+    /// The tab the command line opened and its folder, homed again once every project's worktrees list.
+    pending: Option<(TabId, PathBuf)>,
     _hooks: [Subscription; 2],
 }
 
@@ -134,25 +154,22 @@ impl Workspace {
         );
         self.projects = projects;
         self.dormant = dormant;
+        let mut pending = None;
         if let Some(launch) = boot.launch {
             let home = self.home_for(&launch.cwd);
             self.select_home(home.clone(), window, cx);
             let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
-            let id = self.add(pty, events, launch, (Vec::new(), home), window, cx);
+            let start = Some(launch.cwd.clone());
+            let id = self.add(pty, events, launch, (Vec::new(), home, start), window, cx);
             self.show(id, window, cx);
         } else if let Some(folder) = boot.folder {
             let home = self.home_for(&folder);
             log::info!("workspace: {} opens in {home:?}", folder.display());
             self.select_home(home.clone(), window, cx);
             let shell = SettingsStore::get(cx).shell.clone();
-            self.open(
-                &shell,
-                Vec::new(),
-                Start::In(folder),
-                (home, None),
-                window,
-                cx,
-            )?;
+            let start = Start::In(folder.clone());
+            self.open(&shell, Vec::new(), start, (home, None), window, cx)?;
+            pending = self.current_id().map(|id| (id, folder));
         } else {
             self.select_home(selected, window, cx);
             if self.tabs.is_empty() && self.dormant.is_empty() {
@@ -175,6 +192,8 @@ impl Workspace {
             writer: Writer::new(boot.path, boot.mtime),
             number: 0,
             saving: None,
+            closed: false,
+            pending,
             _hooks: [released, quit],
         });
         self.dirty(cx);
@@ -205,7 +224,7 @@ impl Workspace {
 
     /// Saves once changes rest, off the main thread.
     pub(super) fn dirty(&mut self, cx: &mut Context<Self>) {
-        let Some(persist) = self.persist.as_mut() else {
+        let Some(persist) = self.persist.as_mut().filter(|persist| !persist.closed) else {
             return;
         };
         persist.saving = Some(cx.spawn(async move |this, cx| {
@@ -231,12 +250,13 @@ impl Workspace {
         }));
     }
 
-    /// Saves now, on this thread, as the window closes or the app quits.
+    /// Saves now, on this thread, once, as the window closes or the app quits; later changes are the programs ending.
     fn flush(&mut self) {
         let state = self.snapshot();
-        let Some(persist) = self.persist.as_mut() else {
+        let Some(persist) = self.persist.as_mut().filter(|persist| !persist.closed) else {
             return;
         };
+        persist.closed = true;
         persist.saving = None;
         persist.number += 1;
         if let Err(error) = persist.writer.write(persist.number, &state) {
@@ -260,17 +280,21 @@ impl Workspace {
             return None;
         }
         log::info!("workspace: {} tabs of {home:?} wake", asleep.tabs.len());
-        let (mut woken, mut failed) = (Vec::new(), Vec::new());
-        for tab in asleep.tabs {
+        let (mut woken, mut failed, mut kept) = (Vec::new(), Vec::new(), Vec::new());
+        for (at, tab) in asleep.tabs.into_iter().enumerate() {
             let SavedTab::Terminal {
                 name,
                 shell,
                 args,
                 folder,
                 claude,
-            } = tab;
+            } = tab.clone();
+            let start = folder.clone().map_or(Start::Home, Start::In);
             let place = (home.clone(), None);
-            match self.begin(&shell, args, Start::In(folder.clone()), place, window, cx) {
+            let shown = folder
+                .as_deref()
+                .map_or_else(|| "~".into(), |at| at.display().to_string());
+            match self.begin(&shell, args, start, place, window, cx) {
                 Ok(id) => {
                     let tab = self.index(id).map(|at| &mut self.tabs[at]);
                     if let Some(tab) = tab {
@@ -281,16 +305,23 @@ impl Workspace {
                             .terminal
                             .update(cx, |view, _| view.set_front(false, window));
                     }
-                    woken.push(id);
+                    woken.push((at, id));
                 }
                 Err(error) => {
-                    log::error!(
-                        "workspace: a tab in {} did not start: {error:#}",
-                        folder.display()
-                    );
-                    failed.push(format!("{}: {error:#}", folder.display()));
+                    log::error!("workspace: a tab in {shown} did not start: {error:#}");
+                    failed.push(format!("{shown}: {error:#}"));
+                    kept.push(tab);
                 }
             }
+        }
+        // A tab that did not start waits until its home is selected again or forgotten.
+        if !kept.is_empty() {
+            let waiting = Dormant {
+                shown: 0,
+                tabs: kept,
+                failed: true,
+            };
+            self.dormant.insert(home.clone(), waiting);
         }
         if !failed.is_empty() {
             notice(
@@ -301,7 +332,8 @@ impl Workspace {
             );
         }
         self.dirty(cx);
-        woken.get(asleep.shown).or(woken.first()).copied()
+        let shown = woken.iter().find(|(at, _)| *at == asleep.shown);
+        shown.or(woken.first()).map(|(_, id)| *id)
     }
 
     /// Drops the selected home's tabs that wait for its folder.
@@ -317,17 +349,71 @@ impl Workspace {
         }
     }
 
-    /// What shows while the selected home's tabs wait for its missing folder.
+    /// Homes the command line's tab again once no listing runs, should its folder belong elsewhere than the cache said.
+    pub(super) fn rehome(&mut self, cx: &mut Context<Self>) {
+        if self.projects.iter().any(|project| project.listing.flight) {
+            return;
+        }
+        let Some((id, folder)) = self.persist.as_mut().and_then(|p| p.pending.take()) else {
+            return;
+        };
+        let home = self.home_for(&folder);
+        let Some(at) = self.index(id) else {
+            return;
+        };
+        let old = self.tabs[at].home.clone();
+        if old == home {
+            return;
+        }
+        log::info!("workspace: tab {} moves from {old:?} to {home:?}", id.0);
+        let left: Vec<TabId> = strip(self.tabs.iter().map(|tab| &tab.home), &old)
+            .into_iter()
+            .map(|at| self.tabs[at].id)
+            .collect();
+        if self.shown.get(&old) == Some(&id) {
+            match neighbor(&left, id) {
+                Some(next) => self.shown.insert(old.clone(), next),
+                None => self.shown.remove(&old),
+            };
+        }
+        if self.selected == old {
+            self.selected = home.clone();
+        }
+        self.tabs[at].home = home.clone();
+        self.shown.insert(home, id);
+        self.dirty(cx);
+        cx.notify();
+    }
+
+    /// What shows while the selected home's tabs wait for its missing folder, or failed to start.
     pub(super) fn asleep(&self, cx: &Context<Self>) -> AnyElement {
         let path = match &self.selected {
             Home::Tree { path, .. } => path.display().to_string(),
             Home::Others => String::new(),
         };
-        let workspace = cx.entity();
+        let failed = self
+            .dormant
+            .get(&self.selected)
+            .is_some_and(|asleep| asleep.failed);
+        let (title, hint) = if failed {
+            ("et.empty.failed", "et.empty.failed_hint")
+        } else {
+            ("et.empty.missing", "et.empty.missing_hint")
+        };
+        let (workspace, retried) = (cx.entity(), cx.entity());
         let forget = Button::new("forget-tabs", text(cx, "et.empty.forget", &[]))
             .icon(IconName::Trash2)
+            .variant(ButtonVariant::Ghost)
             .on_click(move |_, _, cx| workspace.update(cx, |this, cx| this.forget(cx)));
-        let title = text(cx, "et.empty.missing", &[]);
+        let retry = Button::new("retry-tabs", text(cx, "et.empty.retry", &[]))
+            .icon(IconName::RefreshCw)
+            .on_click(move |_, window, cx| {
+                retried.update(cx, |this, cx| {
+                    this.select_home(this.selected.clone(), window, cx)
+                })
+            });
+        let actions = div().flex().gap_2().child(retry).child(forget);
+        let title = text(cx, title, &[]);
         div()
             .size_full()
             .flex()
@@ -335,8 +421,8 @@ impl Workspace {
             .justify_center()
             .child(
                 EmptyState::new("folder-missing", IconName::TriangleAlert, title)
-                    .body(text(cx, "et.empty.missing_hint", &[("path", &path)]))
-                    .action(forget),
+                    .body(text(cx, hint, &[("path", &path)]))
+                    .action(actions),
             )
             .into_any_element()
     }

@@ -13,6 +13,8 @@ fn worktree(path: &str, label: &str, missing: bool) -> Tree {
     Tree {
         path: PathBuf::from(path),
         label: label.into(),
+        branch: None,
+        head: None,
         missing,
     }
 }

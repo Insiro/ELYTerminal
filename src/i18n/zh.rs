@@ -238,6 +238,13 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "{path} 已不存在；保存的标签页会等它回来。",
     ),
     ("et.empty.forget", "忘记标签页"),
+    ("et.empty.failed", "保存的标签页未能启动"),
+    (
+        "et.empty.failed_hint",
+        "唤醒时已显示其错误；可重试或忘记它们。",
+    ),
+    ("et.empty.retry", "重试"),
+    ("et.session.start_folder", "“启动于”文件夹不可用"),
     ("et.store.corrupt", "工作区文件无法使用"),
     (
         "et.store.corrupt_body",

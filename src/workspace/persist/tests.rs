@@ -14,7 +14,7 @@ fn tab(folder: &str, name: &str) -> SavedTab {
         name: name.into(),
         shell: "/bin/zsh".into(),
         args: vec!["-l".into()],
-        folder: PathBuf::from(folder),
+        folder: (!folder.is_empty()).then(|| PathBuf::from(folder)),
         claude: (name == "claude").then(|| "6f1c2b3a-1d2e-4f5a-8b6c-7d8e9f0a1b2c".into()),
     }
 }
@@ -43,8 +43,8 @@ fn saved_state() -> State {
                 },
                 Worktree {
                     path: PathBuf::from("/p/app-feat"),
-                    branch: Some("feat".into()),
-                    head: None,
+                    branch: None,
+                    head: Some("abcdef0123456789".into()),
                 },
             ],
             spaces: vec![
@@ -70,7 +70,7 @@ fn saved_state() -> State {
     ];
     state.others = SavedSpace {
         shown: 0,
-        tabs: vec![tab("/tmp", "x")],
+        tabs: vec![tab("/tmp", "x"), tab("", "home")],
     };
     state
 }
@@ -83,6 +83,14 @@ fn a_restored_state_saves_as_it_was_while_dormant() {
     assert_eq!(next, 2);
     assert_eq!(dormant.len(), 3);
     assert_eq!(selected, tree("/p/app", "/p/app-feat"));
+    let Trees::Git(trees) = &projects[0].trees else {
+        panic!("the cache lists worktrees");
+    };
+    assert_eq!(trees[1].label, "abcdef0", "a detached head shows short");
+    assert!(
+        trees.iter().all(|tree| !tree.missing),
+        "no disk read at restore"
+    );
     assert_eq!(state(&projects, Vec::new(), &dormant, &selected), original);
 }
 
@@ -111,6 +119,7 @@ fn live_and_dormant_tabs_of_one_home_both_save() {
         Dormant {
             shown: 0,
             tabs: vec![tab("/b", "")],
+            failed: false,
         },
     )]);
     let live = vec![(others.clone(), tab("/a", ""), true)];
@@ -159,6 +168,11 @@ fn saves_land_in_order_and_an_older_one_passes_by() {
     assert!(writer.write(2, &second).expect("the second saves"));
     assert!(!writer.write(1, &first).expect("the first passes by"));
     assert!(!writer.write(2, &first).expect("a repeat passes by"));
+    assert!(
+        !writer
+            .write(3, &second)
+            .expect("the same state writes nothing")
+    );
     match store::load(&path).expect("the file reads") {
         store::Loaded::Ok(state) => assert_eq!(state, second),
         other => panic!("not saved: {other:?}"),

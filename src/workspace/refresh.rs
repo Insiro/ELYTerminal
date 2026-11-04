@@ -27,6 +27,8 @@ fn list(folder: &Path) -> anyhow::Result<Trees> {
                     missing: worktree.prunable || !worktree.path.is_dir(),
                     label: worktree.label(),
                     path: normal(&worktree.path),
+                    branch: worktree.branch,
+                    head: worktree.head,
                 })
                 .collect(),
         ),
@@ -126,6 +128,7 @@ impl Workspace {
         if changed {
             self.dirty(cx);
         }
+        self.rehome(cx);
         cx.notify();
     }
 }

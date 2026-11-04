@@ -19,7 +19,7 @@ fn tab(claude: Option<&str>) -> SavedTab {
         name: String::new(),
         shell: "/bin/zsh".into(),
         args: vec!["-l".into()],
-        folder: "/p/app-feat".into(),
+        folder: Some("/p/app-feat".into()),
         claude: claude.map(Into::into),
     }
 }

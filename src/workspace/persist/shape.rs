@@ -16,6 +16,8 @@ use crate::{
 pub(in crate::workspace) struct Dormant {
     pub shown: usize,
     pub tabs: Vec<SavedTab>,
+    /// They failed to start, not waited for a missing folder; not saved.
+    pub failed: bool,
 }
 
 /// The order homes save in: projects' by path, Others last.
@@ -26,22 +28,22 @@ fn order(home: &Home) -> (bool, Option<(&Path, &Path)>) {
     }
 }
 
-/// What the file caches of a project's worktrees: each one's label as its branch.
+/// What the file caches of a project's worktrees.
 fn cache(trees: &Trees) -> Vec<Worktree> {
     match trees {
         Trees::Git(trees) => trees
             .iter()
             .map(|tree| Worktree {
                 path: tree.path.clone(),
-                branch: Some(tree.label.clone()),
-                head: None,
+                branch: tree.branch.clone(),
+                head: tree.head.clone(),
             })
             .collect(),
         Trees::Pending | Trees::Plain => Vec::new(),
     }
 }
 
-/// The worktrees a cache gives until git lists them; none cached is not listed yet.
+/// The worktrees a cache gives until git lists them, none missing, since the listing at start checks the disk; none cached is not listed yet.
 fn cached(worktrees: Vec<Worktree>) -> Trees {
     if worktrees.is_empty() {
         return Trees::Pending;
@@ -50,12 +52,19 @@ fn cached(worktrees: Vec<Worktree>) -> Trees {
         worktrees
             .into_iter()
             .map(|tree| Tree {
-                missing: !tree.path.is_dir(),
+                missing: false,
                 label: tree
                     .branch
-                    .or_else(|| tree.head.map(|head| head.chars().take(7).collect()))
+                    .clone()
+                    .or_else(|| {
+                        tree.head
+                            .as_ref()
+                            .map(|head| head.chars().take(7).collect())
+                    })
                     .unwrap_or_else(|| folder_name(&tree.path)),
                 path: tree.path,
+                branch: tree.branch,
+                head: tree.head,
             })
             .collect(),
     )
@@ -76,6 +85,7 @@ pub(in crate::workspace) fn state(
                 let empty = Dormant {
                     shown: 0,
                     tabs: Vec::new(),
+                    failed: false,
                 };
                 spaces.push((home, empty));
                 spaces.len() - 1
@@ -107,7 +117,7 @@ pub(in crate::workspace) fn state(
         })
         .collect();
     for (home, space) in spaces {
-        let Dormant { shown, tabs } = space;
+        let Dormant { shown, tabs, .. } = space;
         match home {
             Home::Others => state.others = SavedSpace { shown, tabs },
             Home::Tree { project, path } => {
@@ -149,6 +159,7 @@ pub(in crate::workspace) fn parts(
             let asleep = Dormant {
                 shown: tree.shown,
                 tabs: tree.tabs,
+                failed: false,
             };
             dormant.insert(home, asleep);
         }
@@ -166,6 +177,7 @@ pub(in crate::workspace) fn parts(
         let asleep = Dormant {
             shown: state.others.shown,
             tabs: state.others.tabs,
+            failed: false,
         };
         dormant.insert(Home::Others, asleep);
     }

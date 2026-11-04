@@ -32,7 +32,6 @@ impl Workspace {
     /// Selects `home`, waking its saved tabs, showing the tab it showed last, else nothing.
     pub(super) fn select_home(&mut self, home: Home, window: &mut Window, cx: &mut Context<Self>) {
         let woken = self.wake(&home, window, cx);
-        self.dirty(cx);
         match woken.or_else(|| self.shown.get(&home).copied()) {
             Some(id) => self.show(id, window, cx),
             None => {
@@ -45,6 +44,7 @@ impl Workspace {
                 }
                 log::info!("app: home {home:?} selected");
                 self.selected = home;
+                self.dirty(cx);
                 self.show_none(window, cx);
             }
         }
