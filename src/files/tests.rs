@@ -1,6 +1,6 @@
-use std::env;
+use std::{env, fs};
 
-use super::{marks::marks, *};
+use super::{listing::Entry, marks::marks, *};
 
 /// A fresh folder under the temp dir.
 fn folder(name: &str) -> PathBuf {

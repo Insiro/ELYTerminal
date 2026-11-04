@@ -62,8 +62,8 @@ impl Workspace {
             workspace.update(cx, |this, cx| {
                 this.folder_actions = false;
                 log::info!("files: folder actions hidden for chooser");
-                if let Some(tab) = this.current() {
-                    window.focus(&tab.session().terminal.focus_handle(cx), cx);
+                if let Some(session) = this.current().and_then(|tab| tab.term()) {
+                    window.focus(&session.terminal.focus_handle(cx), cx);
                 }
                 cx.notify();
                 this.choose_folder(window, cx);

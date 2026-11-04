@@ -76,7 +76,8 @@ impl Workspace {
             StartIn::Home => Some(Start::Home),
             StartIn::Session => Some(
                 self.current()
-                    .map_or(Start::Home, |tab| Start::In(tab.session().folder.clone())),
+                    .and_then(|tab| tab.term())
+                    .map_or(Start::Home, |s| Start::In(s.folder.clone())),
             ),
             StartIn::Folder => match settings::start_folder(&settings.start_folder) {
                 Ok(folder) => Some(Start::In(folder)),
@@ -90,11 +91,12 @@ impl Workspace {
 
     /// Tab `id` again: the shell it runs, in the folder it last reported, right after it.
     pub fn duplicate(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(tab) = self.index(id).map(|index| &self.tabs[index]) else {
-            log::error!("app: there is no tab {} to duplicate", id.0);
+        let tab = self.index(id).map(|index| &self.tabs[index]);
+        let Some((session, home)) = tab.and_then(|tab| Some((tab.term()?, tab.home.clone())))
+        else {
+            log::error!("app: there is no terminal tab {} to duplicate", id.0);
             return;
         };
-        let (session, home) = (tab.session(), tab.home.clone());
         let (shell, args, folder) = (
             session.shell.clone(),
             session.args.clone(),
@@ -122,8 +124,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
-        let (shell, args) = match self.current() {
-            Some(tab) => (tab.session().shell.clone(), tab.session().args.clone()),
+        let (shell, args) = match self.current().and_then(|tab| tab.term()) {
+            Some(session) => (session.shell.clone(), session.args.clone()),
             None => (SettingsStore::get(cx).shell.clone(), Vec::new()),
         };
         let home = self.home_for(&folder);

@@ -21,7 +21,9 @@ impl Workspace {
         }
         let tab = self.tabs[index].id;
         let shown = self.current_id() == Some(tab);
-        let session = self.tabs[index].session_mut();
+        let Some(session) = self.tabs[index].term_mut() else {
+            return;
+        };
         match event {
             TerminalEvent::Title(title) => {
                 log::debug!("app: tab {}'s program names it {title:?}", tab.0);
@@ -78,7 +80,7 @@ impl Workspace {
     /// A press on notification `tag`: its tab hears of it and shows in its home, unless it asked not to; false when no tab here posted it.
     pub fn pressed(&mut self, tag: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let found = self.tabs.iter().find_map(|tab| {
-            let terminal = &tab.session().terminal;
+            let terminal = &tab.term()?.terminal;
             let focus = terminal.update(cx, |view, _| view.pressed(tag))?;
             Some((tab.id, focus))
         });

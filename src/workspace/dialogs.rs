@@ -38,7 +38,9 @@ impl Workspace {
         let Some(index) = self.index(id) else {
             return;
         };
-        let session = self.tabs[index].session();
+        let Some(session) = self.tabs[index].term() else {
+            return;
+        };
         let (name, title) = (session.name.clone(), session.title.clone());
         let field = cx.new(|cx| {
             let mut input = TextInput::new(window, cx);
@@ -64,7 +66,9 @@ impl Workspace {
             log::debug!("app: the tab renamed is gone");
             return;
         };
-        let session = self.tabs[index].session_mut();
+        let Some(session) = self.tabs[index].term_mut() else {
+            return;
+        };
         session.name = name.trim().to_string();
         if session.name.is_empty() {
             log::info!("app: tab {} takes its program's title again", id.0);
@@ -98,8 +102,8 @@ impl Workspace {
 
     /// Gives the shown tab the keys again, else the workspace.
     fn refocus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.current() {
-            Some(tab) => window.focus(&tab.session().terminal.focus_handle(cx), cx),
+        match self.current().and_then(|tab| tab.term()) {
+            Some(session) => window.focus(&session.terminal.focus_handle(cx), cx),
             None => window.focus(&self.focus, cx),
         }
     }
@@ -165,7 +169,7 @@ impl Workspace {
                 let claude = open
                     .iter()
                     .filter_map(|id| self.index(*id))
-                    .filter(|at| self.tabs[*at].session().claude.is_some())
+                    .filter(|at| self.tabs[*at].term().is_some_and(|s| s.claude.is_some()))
                     .count();
                 let message = match claude {
                     0 => message,

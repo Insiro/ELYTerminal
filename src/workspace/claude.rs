@@ -102,7 +102,8 @@ impl Workspace {
     pub fn ask_close(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
         let running = self
             .index(id)
-            .is_some_and(|at| self.tabs[at].session().claude.is_some());
+            .and_then(|at| self.tabs[at].term())
+            .is_some_and(|session| session.claude.is_some());
         if running {
             log::debug!("app: tab {} runs Claude, so closing asks", id.0);
             self.asking = Some(Asking::CloseClaude { id });
@@ -116,7 +117,7 @@ impl Workspace {
     pub fn copy_claude(&self, id: TabId, cx: &mut App) {
         let claude = self
             .index(id)
-            .and_then(|at| self.tabs[at].session().claude.clone());
+            .and_then(|at| self.tabs[at].term()?.claude.clone());
         match claude {
             Some(claude) => {
                 log::info!("app: copied Claude session {claude}");
@@ -135,7 +136,9 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let tab = self.tabs[index].id;
-        let session = self.tabs[index].session_mut();
+        let Some(session) = self.tabs[index].term_mut() else {
+            return;
+        };
         let Some(claude) = session.claude.clone() else {
             return;
         };
@@ -146,7 +149,7 @@ impl Workspace {
             let terminal = session.terminal.clone();
             terminal.update(cx, |view, _| view.type_bytes(KEY.as_bytes()));
         }
-        if !before.prompted() && self.tabs[index].session().watch.prompted() {
+        if !before.prompted() && self.tabs[index].term().is_some_and(|s| s.watch.prompted()) {
             self.time_claude((tab, claude), window, cx);
         }
         match end {
@@ -160,7 +163,9 @@ impl Workspace {
     /// Tab `index` runs Claude no more.
     fn drop_claude(&mut self, index: usize, cx: &mut Context<Self>) {
         let tab = self.tabs[index].id;
-        let session = self.tabs[index].session_mut();
+        let Some(session) = self.tabs[index].term_mut() else {
+            return;
+        };
         if let Some(id) = session.claude.take() {
             log::info!("app: tab {} forgets Claude {id}", tab.0);
         }
@@ -181,7 +186,9 @@ impl Workspace {
         let Some(index) = self.index(id) else {
             return;
         };
-        let session = self.tabs[index].session_mut();
+        let Some(session) = self.tabs[index].term_mut() else {
+            return;
+        };
         session.claude = Some(claude);
         let watched = hearing != Hearing::Blind;
         session.watch = if watched {
@@ -207,7 +214,9 @@ impl Workspace {
                 let Some(index) = this.index(id) else {
                     return;
                 };
-                let session = this.tabs[index].session();
+                let Some(session) = this.tabs[index].term() else {
+                    return;
+                };
                 if session.claude.as_ref() != Some(&claude) || !session.watch.waiting() {
                     return;
                 }

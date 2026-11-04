@@ -15,21 +15,7 @@ pub struct Tab {
     pub body: Body,
 }
 
-pub enum Body {
-    Term(Session),
-}
-
-impl Tab {
-    pub fn session(&self) -> &Session {
-        let Body::Term(session) = &self.body;
-        session
-    }
-
-    pub fn session_mut(&mut self) -> &mut Session {
-        let Body::Term(session) = &mut self.body;
-        session
-    }
-}
+pub use body::Body;
 
 /// The places, in order, of the tabs that live in `home`.
 pub fn strip<'a>(homes: impl IntoIterator<Item = &'a Home>, home: &Home) -> Vec<usize> {
@@ -66,7 +52,7 @@ pub fn moved(strip: &[usize], from: usize, to: usize) -> Option<(usize, usize)> 
 impl Workspace {
     /// Every session, in the tabs' order.
     pub fn sessions(&self) -> impl Iterator<Item = &Session> {
-        self.tabs.iter().map(Tab::session)
+        self.tabs.iter().filter_map(Tab::term)
     }
 
     pub(super) fn index(&self, id: TabId) -> Option<usize> {
@@ -75,9 +61,10 @@ impl Workspace {
 
     /// The tab whose terminal is `terminal`.
     pub(super) fn holding(&self, terminal: EntityId) -> Option<usize> {
-        self.tabs
-            .iter()
-            .position(|tab| tab.session().terminal.entity_id() == terminal)
+        self.tabs.iter().position(|tab| {
+            tab.term()
+                .is_some_and(|s| s.terminal.entity_id() == terminal)
+        })
     }
 
     /// The tab the selected home shows.
@@ -104,12 +91,14 @@ impl Workspace {
             return;
         };
         if self.current_id() == Some(id) {
-            let terminal = &self.tabs[index].session().terminal;
-            window.focus(&terminal.focus_handle(cx), cx);
+            if let Some(session) = self.tabs[index].term() {
+                window.focus(&session.terminal.focus_handle(cx), cx);
+            }
             return;
         }
-        if let Some(hidden) = self.current().filter(|tab| tab.id != id) {
-            hidden.session().terminal.update(cx, |view, cx| {
+        let hidden = self.current().filter(|tab| tab.id != id);
+        if let Some(hidden) = hidden.and_then(Tab::term) {
+            hidden.terminal.update(cx, |view, cx| {
                 view.let_go(cx);
                 view.set_front(false, window);
             });
@@ -117,15 +106,16 @@ impl Workspace {
         let tab = &mut self.tabs[index];
         self.selected = tab.home.clone();
         self.shown.insert(tab.home.clone(), id);
-        let session = tab.session_mut();
-        session.bell = false;
-        session.waiting = false;
-        session
-            .terminal
-            .update(cx, |view, _| view.set_front(true, window));
-        window.focus(&session.terminal.focus_handle(cx), cx);
-        let folder = session.folder.clone();
-        self.follow(&folder, cx);
+        if let Some(session) = tab.term_mut() {
+            session.bell = false;
+            session.waiting = false;
+            session
+                .terminal
+                .update(cx, |view, _| view.set_front(true, window));
+            window.focus(&session.terminal.focus_handle(cx), cx);
+            let folder = session.folder.clone();
+            self.follow(&folder, cx);
+        }
         log::debug!("app: tab {} shown", id.0);
         self.dirty(cx);
         self.retitle(window);
@@ -166,16 +156,20 @@ impl Workspace {
             self.asking = None;
         }
         let tab = self.tabs.remove(index);
-        let session = tab.session();
-        log::info!(
-            "app: tab {} of {} closes",
-            id.0,
-            session.terminal.read(cx).pid()
-        );
-        // Its textures leave the window's atlas with it.
-        session
-            .terminal
-            .update(cx, |view, _| view.set_front(false, window));
+        match tab.term() {
+            Some(session) => {
+                log::info!(
+                    "app: tab {} of {} closes",
+                    id.0,
+                    session.terminal.read(cx).pid()
+                );
+                // Its textures leave the window's atlas with it.
+                session
+                    .terminal
+                    .update(cx, |view, _| view.set_front(false, window));
+            }
+            None => log::info!("app: tab {} closes", id.0),
+        }
         self.dirty(cx);
         if self.shown.get(&home) != Some(&id) {
             cx.notify();
@@ -226,5 +220,6 @@ impl Workspace {
     }
 }
 
+mod body;
 #[cfg(test)]
 mod tests;

@@ -50,7 +50,7 @@ impl Workspace {
         let settings = SettingsStore::get(cx);
         let workspace = cx.entity();
         let tabs = self.strip().into_iter().filter_map(|id| {
-            let session = self.tabs[self.index(id)?].session();
+            let session = self.tabs[self.index(id)?].term()?;
             let icon = match session.need() {
                 Need::Calm if session.claude.is_some() => IconName::Bot,
                 need => icon(need),
@@ -87,7 +87,7 @@ impl Workspace {
         let more = self.current_id().map(|id| {
             let claude = self
                 .index(id)
-                .and_then(|at| self.tabs[at].session().claude.clone());
+                .and_then(|at| self.tabs[at].term()?.claude.clone());
             let menu = menu::tab(&workspace, id, (settings.session_menu, claude), cx);
             OverflowMenu::new("tab-menu", menu).tooltip(text(cx, "et.tab.more", &[]))
         });

@@ -35,8 +35,8 @@ impl Workspace {
         match woken.or_else(|| self.shown.get(&home).copied()) {
             Some(id) => self.show(id, window, cx),
             None => {
-                if let Some(tab) = self.current() {
-                    let terminal = tab.session().terminal.clone();
+                if let Some(session) = self.current().and_then(Tab::term) {
+                    let terminal = session.terminal.clone();
                     terminal.update(cx, |view, cx| {
                         view.let_go(cx);
                         view.set_front(false, window);
@@ -55,7 +55,7 @@ impl Workspace {
         self.tabs
             .iter()
             .filter(|tab| row.covers(&tab.home))
-            .map(Tab::session)
+            .filter_map(Tab::term)
             .filter(|session| session.need() > Need::Calm || session.look.is_some())
             .max_by_key(|session| session.need())
     }
@@ -72,7 +72,7 @@ impl Workspace {
     pub(super) fn marks_move(&self, now: Instant) -> bool {
         self.tabs
             .iter()
-            .map(Tab::session)
+            .filter_map(Tab::term)
             .any(|session| !rung(session) && session.moves(now))
     }
 

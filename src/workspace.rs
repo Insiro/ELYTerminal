@@ -153,7 +153,10 @@ impl Workspace {
             if let Home::Tree { project, .. } = this.selected.clone() {
                 this.refresh_folder(&project, cx);
             }
-            let Some(folder) = this.current().map(|tab| tab.session().folder.clone()) else {
+            let Some(folder) = this
+                .current()
+                .and_then(|tab| Some(tab.term()?.folder.clone()))
+            else {
                 return;
             };
             this.files.update(cx, |files, cx| files.show(&folder, cx));
@@ -210,8 +213,8 @@ impl Workspace {
 
     /// Notes each session's mark `now`, and draws the window at each step while the drawn one moves.
     fn tick(&mut self, now: Instant, cx: &mut Context<Self>) {
-        for tab in &mut self.tabs {
-            tab.session_mut().note(now, cx);
+        for session in self.tabs.iter_mut().filter_map(Tab::term_mut) {
+            session.note(now, cx);
         }
         let moving = SettingsStore::get(cx).show_sessions && self.marks_move(now);
         if moving == self.ticking.is_some() {
@@ -240,8 +243,8 @@ impl Workspace {
 
     /// What the shown tab is called, else the selected home.
     fn title(&self) -> String {
-        match self.current() {
-            Some(tab) => tab.session().named().to_string(),
+        match self.current().and_then(|tab| tab.term()) {
+            Some(session) => session.named().to_string(),
             None => self
                 .home_label(&self.selected)
                 .unwrap_or_else(|| TITLE.into()),
@@ -300,8 +303,8 @@ impl Render for Workspace {
             .children(gear)
             .child(right);
         let mut shell = ColumnShell::new("workspace").glass();
-        let body = match self.current() {
-            Some(tab) => tab.session().terminal.clone().into_any_element(),
+        let body = match self.current().and_then(|tab| tab.term()) {
+            Some(session) => session.terminal.clone().into_any_element(),
             None if self.dormant.contains_key(&self.selected) => self.asleep(cx),
             None => self.empty(cx).into_any_element(),
         };
@@ -338,7 +341,10 @@ impl Render for Workspace {
         if settings.show_panel {
             let tab = settings.panel;
             let switch = self.panel_tabs(cx);
-            let quiet = self.current().is_some_and(|tab| !tab.session().reports);
+            let quiet = self
+                .current()
+                .and_then(|tab| tab.term())
+                .is_some_and(|s| !s.reports);
             let caption = || {
                 Caption::new(text(cx, "et.panel.no_folder", &[]))
                     .px_3()
