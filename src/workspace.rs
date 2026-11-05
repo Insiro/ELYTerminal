@@ -138,6 +138,8 @@ pub struct Workspace {
     background: Blur,
     /// Column widths a drag shows before the settings hold them.
     dragged: Dragged,
+    /// The project a drag in the left column holds.
+    hold: sidebar::Hold,
     /// Draws the window at each step of the status marks while one shown moves.
     ticking: Option<Task<()>>,
     /// The shells this system holds, found as the window opened.
@@ -197,6 +199,7 @@ impl Workspace {
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),
+            hold: sidebar::Hold::default(),
             ticking: None,
             found: crate::profiles::detected(),
             choosing_folder: false,
@@ -399,6 +402,7 @@ impl Render for Workspace {
             .size_full()
             .key_context(CONTEXT)
             .map(menus::window_actions)
+            .capture_key_down(cx.listener(Self::escape_drag))
             .on_action(cx.listener(|this, _: &ToggleSessions, _, cx| {
                 this.toggle(
                     |settings| settings.show_sessions = !settings.show_sessions,

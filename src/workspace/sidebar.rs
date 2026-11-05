@@ -7,7 +7,6 @@ use ely_gpui_component::{
     layout::Collapsible,
     lists::ListItem,
     menus::ContextMenu,
-    motion::Reorder,
     primitives::{Disclosure, Icon, IconName},
     theme::ActiveTheme,
 };
@@ -26,7 +25,10 @@ use crate::{
     settings::SettingsStore,
 };
 
+mod drag;
 mod menu;
+
+pub(super) use drag::Hold;
 
 impl Workspace {
     /// Selects `home`, waking its saved tabs, showing the tab it showed last, else nothing.
@@ -90,7 +92,7 @@ impl Workspace {
         let home_dir = dirs::home_dir();
         let blocks = self.projects.iter().map(|project| {
             let block = self.project_block(project, now, home_dir.as_deref(), cx);
-            (project.id.to_string(), block)
+            (project.id, block)
         });
         let others = self.others_shown().then(|| {
             let mut row = ListItem::new("home-others", text(cx, "et.projects.others", &[]))
@@ -105,48 +107,24 @@ impl Workspace {
             row
         });
         let count = self.projects.len();
-        let (projects, others) = if SettingsStore::get(cx).drag_sessions {
-            let dragged = cx.entity();
-            // Ely drops only inside its box: Others rides last and the box fills the column.
-            let list = blocks
-                .fold(Reorder::new("project-rows"), |list, (key, block)| {
-                    list.row(key, block)
-                })
-                .on_reorder(move |from, to, _, cx| {
-                    dragged.update(cx, |this, cx| {
-                        this.reorder_projects(from, to.min(count.saturating_sub(1)), cx)
-                    })
-                });
-            let list = match others {
-                Some(others) => list.row("others", others),
-                None => list,
-            };
-            (
-                div()
-                    .grid()
-                    .grid_rows(1)
-                    .flex_1()
-                    .child(list)
-                    .into_any_element(),
-                None,
-            )
-        } else {
-            let list = div()
-                .flex()
-                .flex_col()
-                .children(blocks.map(|(_, block)| block))
-                .into_any_element();
-            (list, others)
-        };
-        div()
+        let drags = SettingsStore::get(cx).drag_sessions;
+        let projects = blocks.enumerate().map(|(ix, (id, block))| {
+            if drags {
+                self.slot(ix, id, block, count, cx)
+            } else {
+                block
+            }
+        });
+        let list = div()
             .id("homes")
             .size_full()
             .overflow_y_scroll()
             .p_2()
             .flex()
             .flex_col()
-            .child(projects)
-            .children(others)
+            .children(projects)
+            .children(others);
+        if drags { self.track(list, cx) } else { list }
     }
 
     /// A project's row, its menu, and its linked worktrees beneath while open.
@@ -206,6 +184,11 @@ impl Workspace {
         }
         let menu = menu::project(&workspace, project, cx);
         let head = ContextMenu::new(("project-menu", id as usize), menu).child(item);
+        let head = if SettingsStore::get(cx).drag_sessions {
+            self.draggable(id, project.label().into(), head, cx)
+        } else {
+            head.into_any_element()
+        };
         let rows = trees.into_iter().map(|tree| {
             let home = Home::Tree {
                 project: project.folder.clone(),
