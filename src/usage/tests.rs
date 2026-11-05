@@ -454,3 +454,13 @@ fn the_last_watch_gone_rests_the_reads() {
 
 #[cfg(unix)]
 mod install;
+
+#[test]
+fn token_counts_read_short() {
+    use super::view::count;
+    assert_eq!(
+        (count(999), count(68_121), count(779_913)),
+        ("999".into(), "68k".into(), "779k".into())
+    );
+    assert_eq!(count(1_250_000), "1.2M");
+}

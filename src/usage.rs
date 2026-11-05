@@ -18,6 +18,7 @@ pub mod poll;
 #[cfg(test)]
 mod tests;
 pub mod time;
+pub mod view;
 
 use poll::{Changes, Paths, Poll};
 

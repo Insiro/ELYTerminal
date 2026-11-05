@@ -93,6 +93,7 @@ pub enum PanelTab {
     #[default]
     Git,
     Files,
+    Usage,
 }
 
 /// Everything the settings window edits. A field the file leaves out takes its default.

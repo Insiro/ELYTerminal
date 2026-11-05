@@ -1,16 +1,19 @@
 //! What a window shows of usage, and the watches that keep it read while shown.
 
-use gpui::{App, Context, Subscription};
+use gpui::{App, AppContext, Context, Entity, Subscription};
 
 use super::Workspace;
 use crate::{
+    settings::PanelTab,
     settings::SettingsStore,
-    usage::{Usage, Watch},
+    usage::{Usage, Watch, view::UsageView},
 };
 
 /// The window's watches: the projects column's summary and the Usage tab.
 pub(super) struct Shown {
+    pub(super) tab: Entity<UsageView>,
     summary: Option<Watch>,
+    shown: Option<Watch>,
     _usage: Subscription,
 }
 
@@ -24,7 +27,9 @@ impl Shown {
             }
         });
         Self {
+            tab: cx.new(UsageView::new),
             summary: None,
+            shown: None,
             _usage: observed,
         }
     }
@@ -35,6 +40,10 @@ impl Shown {
         let summary = settings.show_sessions && settings.usage_summary;
         if summary != self.summary.is_some() {
             self.summary = summary.then(|| Usage::watch(cx));
+        }
+        let shown = settings.show_panel && settings.panel == PanelTab::Usage;
+        if shown != self.shown.is_some() {
+            self.shown = shown.then(|| Usage::watch(cx));
         }
     }
 }

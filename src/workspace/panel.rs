@@ -15,11 +15,13 @@ impl Workspace {
         let chosen = match SettingsStore::get(cx).panel {
             PanelTab::Git => "git",
             PanelTab::Files => "files",
+            PanelTab::Usage => "usage",
         };
         let workspace = cx.entity();
         SegmentedControl::new("panel-tab", chosen)
             .segment("git", text(cx, "et.panel.git", &[]), None)
             .segment("files", text(cx, "et.panel.files", &[]), None)
+            .segment("usage", text(cx, "et.panel.usage", &[]), None)
             .size(ControlSize::Sm)
             .on_change(|value, _, cx| show_tab(value, cx))
             .on_context(move |value, _, _, cx| {

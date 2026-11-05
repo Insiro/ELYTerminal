@@ -397,9 +397,10 @@ impl Render for Workspace {
                     // Below the title bar, clear of Windows' caption buttons.
                     .child(div().flex().justify_center().px_2().pt_2().child(switch))
                     .child(div().flex_none().child(self.folder_actions(cx)))
-                    .children(quiet.then(caption))
+                    .children((quiet && tab != PanelTab::Usage).then(caption))
                     .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
-                    .child(body(tab == PanelTab::Files).child(self.files_body(cx))),
+                    .child(body(tab == PanelTab::Files).child(self.files_body(cx)))
+                    .child(body(tab == PanelTab::Usage).child(self.usage.tab.clone())),
             );
         } else {
             shell = shell.column(terminal.action(end));

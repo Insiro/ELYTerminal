@@ -32,6 +32,7 @@ pub(super) fn show_tab(value: &SharedString, cx: &mut App) {
     let panel = match value.as_ref() {
         "git" => PanelTab::Git,
         "files" => PanelTab::Files,
+        "usage" => PanelTab::Usage,
         other => unreachable!("app: no {other} tab"),
     };
     if SettingsStore::get(cx).panel == panel {
