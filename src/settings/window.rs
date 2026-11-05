@@ -24,6 +24,7 @@ mod appearance;
 #[cfg(windows)]
 mod explorer;
 mod terminal;
+pub mod usage;
 
 actions!(elyterminal, [OpenSettings, CloseSettings]);
 
@@ -31,9 +32,10 @@ actions!(elyterminal, [OpenSettings, CloseSettings]);
 const CONTEXT: &str = "Settings";
 
 /// Each category's key, its name's key and its icon.
-const SECTIONS: [(&str, &str, IconName); 2] = [
+const SECTIONS: [(&str, &str, IconName); 3] = [
     ("appearance", "et.settings.appearance", IconName::Palette),
     ("terminal", "et.settings.terminal", IconName::Terminal),
+    ("usage", "et.settings.usage", IconName::Gauge),
 ];
 
 /// Cmd-, opens the settings, Cmd-W closes them; off macOS Ctrl-, and Ctrl-Shift-W, as Ghostty's.
@@ -126,6 +128,7 @@ pub struct SettingsWindow {
     _settings: Subscription,
     _updates: Subscription,
     _language: Subscription,
+    usage: usage::Page,
     _blink: Task<()>,
 }
 
@@ -223,6 +226,7 @@ impl SettingsWindow {
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
             _updates: cx.observe_global::<Updates>(|_, cx| cx.notify()),
             _language: cx.observe_global_in::<I18n>(window, Self::speak),
+            usage: usage::Page::new(cx),
             _blink: Self::blink(cx),
         }
     }
@@ -414,6 +418,7 @@ fn set(
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.follow_usage(cx);
         let page = match self.section.as_ref() {
             "appearance" => {
                 self.grow_fallbacks(window, cx);
@@ -421,6 +426,7 @@ impl Render for SettingsWindow {
                 self.appearance(window, cx).into_any_element()
             }
             "terminal" => self.terminal(cx).into_any_element(),
+            "usage" => self.usage_page(cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
         };
         let page = div()
@@ -475,5 +481,6 @@ impl Render for SettingsWindow {
                 ResizeBorder::new()
                     .child(FocusScope::new(&self.focus).root().size_full().child(shell)),
             )
+            .children(self.usage_dialog(cx))
     }
 }

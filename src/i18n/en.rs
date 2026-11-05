@@ -380,4 +380,53 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.doc.bad_path",
         "A path not in UTF-8 cannot open as a tab",
     ),
+    ("et.settings.usage", "Usage"),
+    ("et.usage.claude_limits", "Claude rate limits"),
+    (
+        "et.usage.claude_hint",
+        "Claude Code's 5-hour and weekly limits, kept by a statusLine wrapper that still runs your own line",
+    ),
+    ("et.usage.turn_on", "Turn on…"),
+    ("et.usage.turn_off", "Turn off"),
+    ("et.usage.forget", "Forget"),
+    (
+        "et.usage.state_on",
+        "On: Claude Code's statusLine runs through the wrapper",
+    ),
+    (
+        "et.usage.elsewhere",
+        "Changed elsewhere: Claude's statusLine no longer runs the wrapper, and nothing is written",
+    ),
+    ("et.usage.missing", "Claude Code's settings not found"),
+    ("et.usage.error", "Claude's settings do not read: {why}"),
+    (
+        "et.usage.project_note",
+        "A project's own .claude/settings.json with a statusLine passes the wrapper by in that project",
+    ),
+    ("et.usage.dialog_title", "Turn on Claude rate limits"),
+    ("et.usage.before", "Before"),
+    ("et.usage.after", "After"),
+    (
+        "et.usage.dialog_note",
+        "Only statusLine changes and a backup is written beside the file. The file is written again with 2-space indents, its keys in their order.",
+    ),
+    ("et.usage.apply", "Apply"),
+    ("et.usage.cancel", "Cancel"),
+    ("et.usage.manual", "Show manual steps"),
+    ("et.usage.back", "Back"),
+    (
+        "et.usage.manual_note",
+        "Put this statusLine into {path} yourself; the row turns on once it matches. Done writes only the wrapper's own files.",
+    ),
+    ("et.usage.done", "Done"),
+    ("et.usage.codex", "Read Codex usage"),
+    (
+        "et.usage.codex_hint",
+        "Codex's limits and tokens from its newest session file, read only",
+    ),
+    ("et.usage.summary", "Summary in the projects column"),
+    (
+        "et.usage.summary_hint",
+        "5-hour and weekly use at the column's bottom",
+    ),
 ];
