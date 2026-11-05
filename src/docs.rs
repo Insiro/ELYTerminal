@@ -5,7 +5,11 @@ use std::{
     time::Duration,
 };
 
-use ely_gpui_component::{editor::CodeEditor, forms::TextInput, i18n::text};
+use ely_gpui_component::{
+    editor::{CodeEditor, EditorEvent},
+    forms::TextInput,
+    i18n::text,
+};
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, ImageAssetLoader,
     Resource, ScrollHandle, SharedString, Subscription, Task, Window,
@@ -296,6 +300,16 @@ impl Document {
                         let name = language(&self.path);
                         let editor = cx
                             .new(|cx| CodeEditor::new(body, window, cx).language(name).read_only());
+                        // Ely's banner offers Make editable; a document stays read-only.
+                        self._hooks
+                            .push(cx.subscribe(&editor, |_, editor, event, cx| {
+                                if *event == EditorEvent::Unlock {
+                                    log::info!(
+                                        "docs: Make editable refused; the document stays read-only"
+                                    );
+                                    editor.update(cx, |editor, cx| editor.set_read_only(true, cx));
+                                }
+                            }));
                         // Keys given before the first read go on to the editor.
                         if self.focus.is_focused(window) {
                             window.focus(&editor.focus_handle(cx), cx);
