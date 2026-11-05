@@ -92,23 +92,6 @@ impl Workspace {
             let block = self.project_block(project, now, home_dir.as_deref(), cx);
             (project.id.to_string(), block)
         });
-        let projects = if SettingsStore::get(cx).drag_sessions {
-            let dragged = workspace.clone();
-            blocks
-                .fold(Reorder::new("project-rows"), |list, (key, block)| {
-                    list.row(key, block)
-                })
-                .on_reorder(move |from, to, _, cx| {
-                    dragged.update(cx, |this, cx| this.reorder_projects(from, to, cx))
-                })
-                .into_any_element()
-        } else {
-            div()
-                .flex()
-                .flex_col()
-                .children(blocks.map(|(_, block)| block))
-                .into_any_element()
-        };
         let others = self.others_shown().then(|| {
             let mut row = ListItem::new("home-others", text(cx, "et.projects.others", &[]))
                 .leading(Icon::new(IconName::Terminal))
@@ -121,6 +104,40 @@ impl Workspace {
             }
             row
         });
+        let count = self.projects.len();
+        let (projects, others) = if SettingsStore::get(cx).drag_sessions {
+            let dragged = cx.entity();
+            // Ely drops only inside its box: Others rides last and the box fills the column.
+            let list = blocks
+                .fold(Reorder::new("project-rows"), |list, (key, block)| {
+                    list.row(key, block)
+                })
+                .on_reorder(move |from, to, _, cx| {
+                    dragged.update(cx, |this, cx| {
+                        this.reorder_projects(from, to.min(count.saturating_sub(1)), cx)
+                    })
+                });
+            let list = match others {
+                Some(others) => list.row("others", others),
+                None => list,
+            };
+            (
+                div()
+                    .grid()
+                    .grid_rows(1)
+                    .flex_1()
+                    .child(list)
+                    .into_any_element(),
+                None,
+            )
+        } else {
+            let list = div()
+                .flex()
+                .flex_col()
+                .children(blocks.map(|(_, block)| block))
+                .into_any_element();
+            (list, others)
+        };
         div()
             .id("homes")
             .size_full()
