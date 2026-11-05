@@ -21,4 +21,5 @@ mod testlog;
 mod testx11;
 pub mod themes;
 pub mod updates;
+pub mod usage;
 pub mod workspace;
