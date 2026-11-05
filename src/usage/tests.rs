@@ -11,6 +11,7 @@ use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 use super::{
     Source, Watch, Window, claude,
     codex::{self, PACKED, Tokens},
+    install::{Install, Status},
     keep,
     poll::{Changes, Paths, Poll},
     time::{self, Age, Clock, Reset},
@@ -327,10 +328,13 @@ fn utc_times_parse() {
 fn paths(name: &str) -> (PathBuf, Paths) {
     let root = folder(name);
     let paths = Paths {
-        usage: root.join("usage"),
+        install: Install {
+            settings: Some(root.join("claude/settings.json")),
+            usage: root.join("usage"),
+        },
         codex: Some(root.join("codex")),
     };
-    fs::create_dir_all(&paths.usage).unwrap();
+    fs::create_dir_all(&paths.install.usage).unwrap();
     (root, paths)
 }
 
@@ -342,8 +346,9 @@ fn a_tick_reads_only_what_changed() {
     let first = poll.tick(&paths, true, now);
     assert!(matches!(first.claude, Some(Ok(None))));
     assert!(matches!(first.codex, Some(Ok(None))));
+    assert_eq!(first.install, Some(Status::Missing));
     let rested = poll.tick(&paths, true, now);
-    assert!(rested.claude.is_none() && rested.codex.is_none());
+    assert!(rested.claude.is_none() && rested.codex.is_none() && rested.install.is_none());
     fs::write(paths.claude_data(), FULL).unwrap();
     let day = root.join("codex/sessions/2026/10/23");
     fs::create_dir_all(&day).unwrap();
@@ -397,10 +402,29 @@ fn a_bad_data_file_fails_once_until_it_changes() {
 }
 
 #[test]
+fn a_wrapper_killed_mid_write_leaves_no_temp_for_long() {
+    let (_root, paths) = paths("poll-sweep");
+    let old = paths.install.usage.join("claude-rate.json.123");
+    let fresh = paths.install.usage.join("claude-rate.json.456");
+    fs::write(&old, "{").unwrap();
+    fs::write(&fresh, "{").unwrap();
+    let past = SystemTime::now() - Duration::from_secs(120);
+    fs::File::options()
+        .write(true)
+        .open(&old)
+        .unwrap()
+        .set_modified(past)
+        .unwrap();
+    Poll::default().tick(&paths, false, Instant::now());
+    assert!(!old.exists() && fresh.exists());
+}
+
+#[test]
 fn a_late_codex_read_is_dropped_once_turned_off() {
     let changes = Changes {
         claude: Some(Ok(None)),
         codex: Some(Ok(None)),
+        install: None,
     };
     let kept = keep(changes, false);
     assert!(kept.codex.is_none() && kept.claude.is_some());
@@ -427,3 +451,6 @@ fn the_last_watch_gone_rests_the_reads() {
     drop(Watch(watchers.clone()));
     assert_eq!(watchers.get(), 0);
 }
+
+#[cfg(unix)]
+mod install;

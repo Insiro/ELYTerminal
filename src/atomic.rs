@@ -9,6 +9,16 @@ use anyhow::Context as _;
 
 /// Writes a temp file beside `path`, then renames it over `path`; `owner` names the caller in errors.
 pub fn write(path: &Path, text: &str, owner: &str) -> anyhow::Result<()> {
+    write_if(path, text, owner, |_| Ok(()))
+}
+
+/// As `write`, but `ready` sees the temp file first and may stop the rename.
+pub fn write_if(
+    path: &Path,
+    text: &str,
+    owner: &str,
+    ready: impl FnOnce(&Path) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     let folder = path
         .parent()
         .with_context(|| format!("{owner}: {} has no folder", path.display()))?;
@@ -20,15 +30,17 @@ pub fn write(path: &Path, text: &str, owner: &str) -> anyhow::Result<()> {
         .with_context(|| format!("{owner}: {} has no file name", path.display()))?
         .to_string_lossy();
     let temp = path.with_file_name(format!("{name}.{}-{count}.tmp", std::process::id()));
-    let written = write_new(&temp, text, owner).and_then(|()| {
-        fs::rename(&temp, path).with_context(|| {
-            format!(
-                "{owner}: cannot rename {} over {}",
-                temp.display(),
-                path.display()
-            )
-        })
-    });
+    let written = write_new(&temp, text, owner)
+        .and_then(|()| ready(&temp))
+        .and_then(|()| {
+            fs::rename(&temp, path).with_context(|| {
+                format!(
+                    "{owner}: cannot rename {} over {}",
+                    temp.display(),
+                    path.display()
+                )
+            })
+        });
     if let Err(error) = written {
         if temp.exists()
             && let Err(left) = fs::remove_file(&temp)

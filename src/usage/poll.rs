@@ -5,24 +5,30 @@ use std::{
     time::{Duration, Instant, UNIX_EPOCH},
 };
 
-use super::{Limits, claude, codex};
+use super::{
+    Limits, claude, codex,
+    install::{Install, Status},
+};
 use crate::docs::read::{Stamp, stamp};
 
 /// How often Codex's day folders are listed again.
 const LIST: Duration = Duration::from_secs(10);
 
+/// A temp file the wrapper left this long ago goes.
+const LEFT: Duration = Duration::from_secs(60);
+
 /// Where each source lives.
 #[derive(Clone, Debug)]
 pub struct Paths {
-    /// The wrapper's folder in the app's config folder.
-    pub usage: PathBuf,
+    /// Claude's settings and the wrapper's folder in the app's config folder.
+    pub install: Install,
     /// Codex's folder; none where no home is named.
     pub codex: Option<PathBuf>,
 }
 
 impl Paths {
     pub fn claude_data(&self) -> PathBuf {
-        self.usage.join("claude-rate.json")
+        self.install.usage.join("claude-rate.json")
     }
 }
 
@@ -40,6 +46,7 @@ pub struct Changes {
     pub claude: Option<Result<Option<Claude>, String>>,
     /// `Ok(None)`: no session file.
     pub codex: Option<Result<Option<codex::Reading>, String>>,
+    pub install: Option<Status>,
 }
 
 /// The stamps last read, kept between ticks.
@@ -49,12 +56,15 @@ pub struct Poll {
     codex_file: Option<Option<PathBuf>>,
     codex: Option<Option<Stamp>>,
     listed: Option<Instant>,
+    /// Claude's settings' and the app's state's stamps, as the status was last read.
+    install: Option<[Option<Stamp>; 2]>,
 }
 
 impl Poll {
     /// Looks at each source, reading what changed since the last tick.
     pub fn tick(&mut self, paths: &Paths, codex_on: bool, now: Instant) -> Changes {
         Changes {
+            install: self.install(&paths.install),
             claude: self.claude(paths),
             codex: if codex_on {
                 self.codex(paths, now)
@@ -67,7 +77,19 @@ impl Poll {
         }
     }
 
+    /// The wrapper's status, read again when either file changed.
+    fn install(&mut self, install: &Install) -> Option<Status> {
+        let look = |path: Option<PathBuf>| path.and_then(|path| stamp(&path).ok().flatten());
+        let stamps = [look(install.settings.clone()), look(Some(install.state()))];
+        if self.install == Some(stamps) {
+            return None;
+        }
+        self.install = Some(stamps);
+        Some(install.status())
+    }
+
     fn claude(&mut self, paths: &Paths) -> Option<Result<Option<Claude>, String>> {
+        sweep(&paths.install.usage);
         let path = paths.claude_data();
         let found = match stamp(&path) {
             Ok(found) => found,
@@ -137,5 +159,26 @@ impl Poll {
                 .map(Some)
                 .map_err(|error| format!("{error:#}")),
         )
+    }
+}
+
+/// Removes the temp files a wrapper killed mid-write left behind.
+fn sweep(folder: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let left = name.to_string_lossy().starts_with("claude-rate.json.")
+            && entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .is_ok_and(|time| time.elapsed().is_ok_and(|age| age >= LEFT));
+        if left {
+            match std::fs::remove_file(entry.path()) {
+                Ok(()) => log::info!("usage: {} was left behind; it goes", entry.path().display()),
+                Err(error) => log::warn!("usage: {} stays: {error}", entry.path().display()),
+            }
+        }
     }
 }

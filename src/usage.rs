@@ -13,6 +13,7 @@ use crate::settings::SettingsStore;
 
 pub mod claude;
 pub mod codex;
+pub mod install;
 pub mod poll;
 #[cfg(test)]
 mod tests;
@@ -102,6 +103,8 @@ impl<T: PartialEq + std::fmt::Debug> Source<T> {
 pub struct Usage {
     pub claude: Source<poll::Claude>,
     pub codex: Source<codex::Reading>,
+    /// The wrapper's status; none until first read.
+    pub install: Option<install::Status>,
     paths: Paths,
     watchers: Rc<Cell<usize>>,
     drawn: Instant,
@@ -133,13 +136,19 @@ pub fn folder() -> anyhow::Result<std::path::PathBuf> {
 
 /// Starts the app's usage, resting until watched.
 pub fn init(cx: &mut App) -> anyhow::Result<()> {
-    let paths = Paths {
+    let settings = crate::projects::claude::config_dir().map(|dir| dir.join("settings.json"));
+    let install = install::Install {
+        settings,
         usage: folder()?,
+    };
+    let paths = Paths {
+        install,
         codex: codex::home(),
     };
     log::info!(
-        "usage: claude's data in {}, codex in {:?}",
-        paths.usage.display(),
+        "usage: claude's data in {}, its settings {:?}, codex in {:?}",
+        paths.install.usage.display(),
+        paths.install.settings,
         paths.codex
     );
     let usage = cx.new(|cx| Usage::new(paths, cx));
@@ -176,6 +185,7 @@ impl Usage {
         Self {
             claude: Source::default(),
             codex: Source::default(),
+            install: None,
             paths,
             watchers: Rc::new(Cell::new(0)),
             drawn: Instant::now(),
@@ -227,9 +237,29 @@ impl Usage {
         if let Some(found) = changes.codex {
             changed |= self.codex.set("codex", found);
         }
+        if let Some(status) = changes.install {
+            changed |= self.set_install(status);
+        }
         if changed {
             self.redraw(cx);
         }
+    }
+
+    /// Reads the wrapper's status now, as after the user changed it.
+    pub fn recheck(&mut self, cx: &mut Context<Self>) {
+        let status = self.paths.install.status();
+        if self.set_install(status) {
+            self.redraw(cx);
+        }
+    }
+
+    fn set_install(&mut self, status: install::Status) -> bool {
+        if self.install.as_ref() == Some(&status) {
+            return false;
+        }
+        log::info!("usage: claude's wrapper is {status:?}");
+        self.install = Some(status);
+        true
     }
 
     fn redraw(&mut self, cx: &mut Context<Self>) {
