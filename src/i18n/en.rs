@@ -464,4 +464,8 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "tokens: session {total} (cached {cached}) · last turn {last}",
     ),
     ("et.usage.context", "context {percent}%"),
+    (
+        "et.usage.summary_tip",
+        "Agent usage; press to show the Usage tab",
+    ),
 ];

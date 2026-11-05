@@ -425,4 +425,5 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "令牌：会话 {total}（缓存 {cached}）· 上一轮 {last}",
     ),
     ("et.usage.context", "上下文 {percent}%"),
+    ("et.usage.summary_tip", "智能体用量；点击显示用量标签页"),
 ];

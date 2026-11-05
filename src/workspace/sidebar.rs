@@ -124,7 +124,17 @@ impl Workspace {
             .flex_col()
             .children(projects)
             .children(others);
-        if drags { self.track(list, cx) } else { list }
+        let list = if drags { self.track(list, cx) } else { list };
+        let summary = SettingsStore::get(cx).usage_summary;
+        let summary = summary
+            .then(|| crate::usage::summary::element(cx))
+            .flatten();
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(div().flex_1().min_h_0().child(list))
+            .children(summary)
     }
 
     /// A project's row, its menu, and its linked worktrees beneath while open.

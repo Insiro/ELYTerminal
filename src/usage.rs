@@ -15,6 +15,7 @@ pub mod claude;
 pub mod codex;
 pub mod install;
 pub mod poll;
+pub mod summary;
 #[cfg(test)]
 mod tests;
 pub mod time;
