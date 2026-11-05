@@ -1,14 +1,18 @@
 use std::{
+    cell::Cell,
     env, fs,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
+    rc::Rc,
+    time::{Duration, Instant, SystemTime},
 };
 
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
 
 use super::{
-    Window, claude,
+    Source, Watch, Window, claude,
     codex::{self, PACKED, Tokens},
+    keep,
+    poll::{Changes, Paths, Poll},
     time::{self, Age, Clock, Reset},
 };
 
@@ -318,4 +322,108 @@ fn utc_times_parse() {
     );
     assert_eq!(time::parse_utc("2026-10-23 07:55:30Z"), None);
     assert_eq!(time::parse_utc("2026-13-23T07:55:30Z"), None);
+}
+
+fn paths(name: &str) -> (PathBuf, Paths) {
+    let root = folder(name);
+    let paths = Paths {
+        usage: root.join("usage"),
+        codex: Some(root.join("codex")),
+    };
+    fs::create_dir_all(&paths.usage).unwrap();
+    (root, paths)
+}
+
+#[test]
+fn a_tick_reads_only_what_changed() {
+    let (root, paths) = paths("poll-stamp");
+    let mut poll = Poll::default();
+    let now = Instant::now();
+    let first = poll.tick(&paths, true, now);
+    assert!(matches!(first.claude, Some(Ok(None))));
+    assert!(matches!(first.codex, Some(Ok(None))));
+    let rested = poll.tick(&paths, true, now);
+    assert!(rested.claude.is_none() && rested.codex.is_none());
+    fs::write(paths.claude_data(), FULL).unwrap();
+    let day = root.join("codex/sessions/2026/10/23");
+    fs::create_dir_all(&day).unwrap();
+    fs::write(
+        day.join("rollout-x.jsonl"),
+        session(&[counted("2026-10-23T07:50:00Z", 6.0, RATES)]),
+    )
+    .unwrap();
+    let read = poll.tick(&paths, true, now);
+    assert_eq!(
+        read.claude
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .limits
+            .five_hour
+            .unwrap()
+            .percent,
+        23.5
+    );
+    assert!(
+        read.codex.is_none(),
+        "codex lists again only after its interval"
+    );
+    let listed = poll.tick(&paths, true, now + Duration::from_secs(10));
+    assert_eq!(
+        listed
+            .codex
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .limits
+            .five_hour
+            .unwrap()
+            .percent,
+        6.0
+    );
+    let again = poll.tick(&paths, true, now + Duration::from_secs(20));
+    assert!(again.claude.is_none() && again.codex.is_none());
+}
+
+#[test]
+fn a_bad_data_file_fails_once_until_it_changes() {
+    let (_root, paths) = paths("poll-bad");
+    fs::write(paths.claude_data(), "{\"cwd\":\"/\"}").unwrap();
+    let mut poll = Poll::default();
+    let now = Instant::now();
+    let failed = poll.tick(&paths, false, now).claude.unwrap().unwrap_err();
+    assert!(failed.contains("no rate_limits"), "{failed}");
+    assert!(poll.tick(&paths, false, now).claude.is_none());
+}
+
+#[test]
+fn a_late_codex_read_is_dropped_once_turned_off() {
+    let changes = Changes {
+        claude: Some(Ok(None)),
+        codex: Some(Ok(None)),
+    };
+    let kept = keep(changes, false);
+    assert!(kept.codex.is_none() && kept.claude.is_some());
+}
+
+#[test]
+fn a_source_logs_and_tells_each_change() {
+    let mut source = Source::<u8>::default();
+    assert!(source.set("t", Ok(None)), "the first look changes it");
+    assert!(!source.set("t", Ok(None)));
+    assert!(source.set("t", Ok(Some(1))));
+    assert!(source.set("t", Err("gone".into())));
+    assert_eq!(source.value, Some(1), "a failure keeps the last good value");
+    assert!(!source.set("t", Err("gone".into())));
+    assert!(source.set("t", Ok(Some(1))), "a failure's end changes it");
+    assert_eq!(source.error, None);
+}
+
+#[test]
+fn the_last_watch_gone_rests_the_reads() {
+    let watchers = Rc::new(Cell::new(2));
+    drop(Watch(watchers.clone()));
+    assert_eq!(watchers.get(), 1);
+    drop(Watch(watchers.clone()));
+    assert_eq!(watchers.get(), 0);
 }

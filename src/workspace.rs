@@ -44,6 +44,7 @@ mod sidebar;
 mod strip;
 mod tabs;
 mod toggles;
+mod usage;
 mod widths;
 
 use dialogs::Asking;
@@ -148,6 +149,7 @@ pub struct Workspace {
     found: Vec<crate::profiles::Found>,
     choosing_folder: bool,
     folder_actions: bool,
+    usage: usage::Shown,
     _settings: Subscription,
     _acted: Subscription,
     _here: Subscription,
@@ -207,6 +209,7 @@ impl Workspace {
             found: crate::profiles::detected(),
             choosing_folder: false,
             folder_actions: false,
+            usage: usage::Shown::new(cx),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 this.sync_preview(window, cx);
@@ -282,6 +285,7 @@ impl Render for Workspace {
         self.background.fit(window);
         let now = Instant::now();
         self.tick(now, cx);
+        self.usage.follow(cx);
         // A page lies over every dialog, so it waits while one asks.
         if let Some(doc) = self.current().and_then(Tab::doc) {
             let allowed = self.asking.is_none();

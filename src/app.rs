@@ -51,6 +51,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     i18n::init(cx);
     crate::interface::init(cx);
     updates::start(cx);
+    crate::usage::init(cx)?;
     ShellIntegration::init(cx)?;
     input::bind_keys(cx);
     workspace::bind_keys(cx);
