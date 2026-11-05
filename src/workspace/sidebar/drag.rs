@@ -47,16 +47,16 @@ pub(in crate::workspace) struct Hold {
     bounds: Rc<RefCell<HashMap<u64, Bounds<Pixels>>>>,
 }
 
-/// The place a pointer at `y` picks: before the first block whose middle lies below it, else last.
-fn place(blocks: &[(Pixels, Pixels)], y: Pixels) -> usize {
-    blocks
+/// The place a pointer at `at` picks on one axis: before the first span whose middle lies past it, else last.
+pub(in crate::workspace) fn place(spans: &[(Pixels, Pixels)], at: Pixels) -> usize {
+    spans
         .iter()
-        .position(|(top, bottom)| *top + (*bottom - *top) / 2.0 > y)
-        .unwrap_or(blocks.len())
+        .position(|(start, end)| *start + (*end - *start) / 2.0 > at)
+        .unwrap_or(spans.len())
 }
 
 /// Where the block at `from` goes for place `target`, or none when it stays.
-fn moved(from: usize, target: usize) -> Option<usize> {
+pub(in crate::workspace) fn moved(from: usize, target: usize) -> Option<usize> {
     let to = if target > from { target - 1 } else { target };
     (to != from).then_some(to)
 }
@@ -116,18 +116,21 @@ impl Workspace {
         }
     }
 
-    /// Escape drops the drag under way, moving nothing.
+    /// Escape drops the drag under way, a project's or a tab's, moving nothing.
     pub(in crate::workspace) fn escape_drag(
         &mut self,
         event: &KeyDownEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.hold.held.is_none() || event.keystroke.key != "escape" {
+        if event.keystroke.key != "escape" {
             return;
         }
-        log::info!("app: project drag cancelled");
-        self.hold.held = None;
+        let project = self.hold.held.take().is_some();
+        if !(self.tab_hold.cancel() || project) {
+            return;
+        }
+        log::info!("app: drag cancelled");
         cx.stop_active_drag(window);
         cx.stop_propagation();
         cx.notify();

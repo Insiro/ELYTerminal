@@ -140,6 +140,8 @@ pub struct Workspace {
     dragged: Dragged,
     /// The project a drag in the left column holds.
     hold: sidebar::Hold,
+    /// The tab a drag in the strip holds.
+    tab_hold: strip::TabHold,
     /// Draws the window at each step of the status marks while one shown moves.
     ticking: Option<Task<()>>,
     /// The shells this system holds, found as the window opened.
@@ -200,6 +202,7 @@ impl Workspace {
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),
             hold: sidebar::Hold::default(),
+            tab_hold: strip::TabHold::default(),
             ticking: None,
             found: crate::profiles::detected(),
             choosing_folder: false,

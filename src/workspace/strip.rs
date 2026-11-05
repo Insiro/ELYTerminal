@@ -5,18 +5,21 @@ use ely_gpui_component::{
     feedback::EmptyState,
     i18n::text,
     menus::OverflowMenu,
-    navigation::{EditorTab, EditorTabs},
     primitives::IconName,
     theme::ControlSize,
 };
 use gpui::{Context, IntoElement, ParentElement, SharedString, Styled, div};
 
 use super::{Workspace, doctabs, tabs::Body};
+
+mod row;
+
 use crate::{
     projects::TabId,
     sessions::{Need, menu},
     settings::SettingsStore,
 };
+pub(super) use row::TabHold;
 
 /// A tab's icon: the shape of its need, as the strip draws every icon in one color.
 fn icon(need: Need) -> IconName {
@@ -59,29 +62,18 @@ impl Workspace {
                 Body::Doc(doc) if doc.read(cx).missing() => IconName::CircleX,
                 Body::Doc(doc) => doc.read(cx).kind().icon(),
             };
-            Some(EditorTab::new(key(id), tab.title(cx)).icon(icon))
-        });
-        let (select, close) = (workspace.clone(), workspace.clone());
-        let mut strip = EditorTabs::new("tabs", tabs)
-            .on_select(move |key, window, cx| {
-                if let Some(id) = tab_of(key) {
-                    select.update(cx, |this, cx| this.show(id, window, cx))
-                }
+            Some(row::Shown {
+                id,
+                title: tab.title(cx).into(),
+                icon,
             })
-            .on_close(move |key, window, cx| {
-                if let Some(id) = tab_of(key) {
-                    close.update(cx, |this, cx| this.ask_close(id, window, cx))
-                }
-            });
-        if let Some(id) = self.current_id() {
-            strip = strip.selected(key(id));
-        }
-        if settings.drag_sessions {
-            let dragged = workspace.clone();
-            strip = strip.on_reorder(move |from, to, _, cx| {
-                dragged.update(cx, |this, cx| this.reorder(from, to, cx))
-            });
-        }
+        });
+        let strip = self.tab_row(
+            tabs.collect(),
+            self.current_id(),
+            settings.drag_sessions,
+            cx,
+        );
         let new = workspace.clone();
         let plus = IconButton::new("new-tab", IconName::Plus)
             .variant(ButtonVariant::Ghost)

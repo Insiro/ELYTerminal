@@ -28,7 +28,7 @@ use crate::{
 mod drag;
 mod menu;
 
-pub(super) use drag::Hold;
+pub(super) use drag::{Hold, moved, place};
 
 impl Workspace {
     /// Selects `home`, waking its saved tabs, showing the tab it showed last, else nothing.
