@@ -198,3 +198,24 @@ pub fn snapshot(number: u32, path: &Path) -> anyhow::Result<()> {
     )
     .with_context(|| format!("cannot write {}", path.display()))
 }
+
+/// Ends every sheet a window holds, logged: AppKit refuses to quit while one is attached.
+pub fn end_sheets() {
+    unsafe {
+        let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        let windows: *mut Object = msg_send![app, windows];
+        let count: u64 = msg_send![windows, count];
+        for ix in 0..count {
+            let window: *mut Object = msg_send![windows, objectAtIndex: ix];
+            let sheet: *mut Object = msg_send![window, attachedSheet];
+            if !sheet.is_null() {
+                let number: i64 = msg_send![window, windowNumber];
+                log::info!(
+                    "shot: the sheet on window {number} ends, since AppKit quits no app with one"
+                );
+                // gpui's prompt reads the code as its first answer's index.
+                let _: () = msg_send![window, endSheet: sheet returnCode: 0i64];
+            }
+        }
+    }
+}

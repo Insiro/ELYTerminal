@@ -123,6 +123,7 @@ fn main() {
                 for line in capture::menus() {
                     log::info!("shot: menu {line}");
                 }
+                capture::end_sheets();
                 cx.update(|cx| cx.quit());
             })
             .detach();
