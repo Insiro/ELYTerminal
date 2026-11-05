@@ -104,6 +104,60 @@ fn reads_text_and_tells_what_it_cannot_show() {
 }
 
 #[test]
+fn text_reads_up_to_the_limit_and_an_image_up_to_its_own() {
+    let root = folder("limits");
+    let exact = root.join("a.txt");
+    fs::write(&exact, vec![b'a'; TEXT_MAX as usize]).expect("a file");
+    assert!(matches!(read(&exact, Kind::Text), Read::Text(_)));
+    let big = root.join("b.png");
+    let file = fs::File::create(&big).expect("a file");
+    file.set_len(Kind::Image.max() + 1).expect("a sparse file");
+    assert_eq!(
+        read(&big, Kind::Image),
+        Read::TooLarge(Kind::Image.max() + 1)
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn every_kind_has_its_own_icon() {
+    use std::collections::HashSet;
+    let kinds = [
+        Kind::Markdown,
+        Kind::Json,
+        Kind::Yaml,
+        Kind::Xml,
+        Kind::Image,
+        Kind::Html,
+        Kind::Text,
+    ];
+    let icons: HashSet<_> = kinds
+        .iter()
+        .map(|kind| format!("{:?}", kind.icon()))
+        .collect();
+    assert_eq!(icons.len(), kinds.len());
+}
+
+#[test]
+fn a_file_that_comes_back_after_it_went_reads_again() {
+    let root = folder("back");
+    let path = root.join("a.md");
+    fs::write(&path, "one").expect("a file");
+    let Found::Changed(first, _) = look(&path, Kind::Markdown, None) else {
+        panic!("a new file reads");
+    };
+    fs::remove_file(&path).expect("gone");
+    assert_eq!(look(&path, Kind::Markdown, Some(first)), Found::Gone);
+    // A gone file clears the known stamp, so the same file returning reads again.
+    fs::write(&path, "one").expect("a file");
+    assert!(matches!(
+        look(&path, Kind::Markdown, None),
+        Found::Changed(_, Read::Text(_))
+    ));
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_stamp_changes_with_the_file_and_is_none_while_missing() {
     let root = folder("stamp");
     let path = root.join("a.txt");
