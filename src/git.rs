@@ -12,12 +12,14 @@ use ely_gpui_component::{
 };
 
 mod diff;
+mod graph;
 pub mod panel;
 mod worktree;
 #[cfg(any(windows, test))]
 pub(crate) mod wsl;
 
 pub use diff::diff;
+pub use graph::graph;
 pub use worktree::{Worktree, worktrees};
 
 /// Git's arguments on one line, for messages.
@@ -456,11 +458,18 @@ pub fn discard(top: &Path, change: &Change, section: ChangeSection) -> anyhow::R
     Ok(())
 }
 
-/// The newest `count` commits from HEAD, which must have one.
+/// The newest `count` commits from HEAD, which must have one, each before its parents, as the graph needs.
 pub fn log(top: &Path, count: usize) -> anyhow::Result<Vec<Commit>> {
     let count = format!("-n{count}");
     let format = "--format=%H%x00%P%x00%s%x00%an%x00%ar%x00%D";
-    let args = ["log", &count, "-z", "--no-show-signature", format];
+    let args = [
+        "log",
+        &count,
+        "-z",
+        "--topo-order",
+        "--no-show-signature",
+        format,
+    ];
     let out = run(top, &args, &[])?;
     let out = String::from_utf8_lossy(&out);
     let fields: Vec<&str> = out.split_terminator('\0').collect();

@@ -325,6 +325,12 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.git.loss_folder", "其中未跟踪的文件会被删除。"),
     ("et.git.loss_file", "它会被删除。"),
     ("et.git.loss_changes", "它未暂存的改动会丢失。"),
+    (
+        "et.git.loss_under",
+        "其中 {count} 个文件未暂存的改动会丢失，新文件会被删除。",
+    ),
+    ("et.git.as_tree", "以树形显示"),
+    ("et.git.as_list", "以列表显示"),
     ("et.clipboard.title", "有程序想读取剪贴板"),
     ("et.clipboard.named", "{name} 想读取：{types}"),
     ("et.clipboard.unnamed", "此会话中的程序想读取：{types}"),
