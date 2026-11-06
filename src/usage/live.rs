@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use super::Limits;
 
 /// How often a watched source is fetched.
-pub const EVERY: Duration = Duration::from_secs(5 * 60);
+pub const EVERY: Duration = Duration::from_secs(10 * 60);
 /// A rate limit without `Retry-After` waits this long.
 pub const LIMITED: Duration = Duration::from_secs(15 * 60);
 /// The longest wait `Retry-After` may ask.

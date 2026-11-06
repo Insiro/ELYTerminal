@@ -6,7 +6,7 @@ use serde_json::Value;
 use super::{
     appserver::{Raw, limits},
     codex,
-    live::{Fetched, Origin},
+    live::{Fetched, Origin, Outcome},
     run::{self, Secret},
 };
 
@@ -36,8 +36,8 @@ pub fn auth(text: &str) -> anyhow::Result<Option<Auth>> {
     }))
 }
 
-/// Fetches the page; `Ok(None)` when Codex is not signed in.
-pub fn fetch(now: i64) -> anyhow::Result<Option<Fetched>> {
+/// Fetches the page, a reading or a rate limit; `Ok(None)` when Codex is not signed in.
+pub fn fetch(now: i64) -> anyhow::Result<Option<Outcome>> {
     let Some(home) = codex::home() else {
         return Ok(None);
     };
@@ -63,12 +63,19 @@ pub fn fetch(now: i64) -> anyhow::Result<Option<Fetched>> {
     }
     let answer = run::get(URL, &headers)?;
     log::info!("usage: ChatGPT's usage page answers {}", answer.status);
+    if answer.status == 429 {
+        log::warn!(
+            "usage: ChatGPT's usage page is rate limited, retry after {:?}",
+            answer.retry_after
+        );
+        return Ok(Some(Outcome::Limited(answer.retry_after)));
+    }
     anyhow::ensure!(
         answer.status == 200,
         "usage: ChatGPT's usage page answered HTTP {}",
         answer.status
     );
-    parse(&answer.body, now).map(Some)
+    parse(&answer.body, now).map(|fetched| Some(Outcome::Read(fetched)))
 }
 
 /// The windows in the page's JSON.

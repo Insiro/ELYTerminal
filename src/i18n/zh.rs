@@ -391,12 +391,12 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.usage.claude_api", "获取 Claude 用量"),
     (
         "et.usage.claude_api_hint",
-        "显示时每 5 分钟用 Claude Code 的登录向 Anthropic 查询，只读",
+        "显示时每 10 分钟用 Claude Code 的登录向 Anthropic 查询，只读",
     ),
     ("et.usage.codex_live", "向 Codex 查询实时用量"),
     (
         "et.usage.codex_live_hint",
-        "显示时每 5 分钟运行 codex app-server，失败则查询 ChatGPT",
+        "显示时每 10 分钟运行 codex app-server，失败则查询 ChatGPT",
     ),
     ("et.usage.summary", "项目栏中的摘要"),
     ("et.usage.summary_hint", "在栏底显示 5 小时与每周用量"),

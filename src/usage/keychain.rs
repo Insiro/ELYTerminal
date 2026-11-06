@@ -117,9 +117,13 @@ pub fn read() -> anyhow::Result<Option<Credentials>> {
     let named = std::env::var_os("CLAUDE_CONFIG_DIR")
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from);
-    if let Some(found) = keychain(named.as_deref())? {
-        log::debug!("usage: claude's token is the Keychain's");
-        return Ok(Some(found));
+    match keychain(named.as_deref()) {
+        Ok(Some(found)) => {
+            log::debug!("usage: claude's token is the Keychain's");
+            return Ok(Some(found));
+        }
+        Ok(None) => {}
+        Err(error) => log::warn!("{error:#}; its credentials file next"),
     }
     let Some(dir) = crate::projects::claude::config_dir() else {
         return Ok(None);
@@ -135,8 +139,24 @@ pub fn read() -> anyhow::Result<Option<Credentials>> {
     }
 }
 
+/// When the Keychain last refused or did not answer; it is not asked again for an hour.
+#[cfg(target_os = "macos")]
+static REFUSED: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
 #[cfg(target_os = "macos")]
 fn keychain(config_dir: Option<&Path>) -> anyhow::Result<Option<Credentials>> {
+    let mut refused = REFUSED.lock().unwrap_or_else(|poison| poison.into_inner());
+    if refused.is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(3_600)) {
+        log::debug!("usage: the Keychain refused within the hour; it is not asked");
+        return Ok(None);
+    }
+    let asked = ask(config_dir);
+    *refused = asked.is_err().then(std::time::Instant::now);
+    asked
+}
+
+#[cfg(target_os = "macos")]
+fn ask(config_dir: Option<&Path>) -> anyhow::Result<Option<Credentials>> {
     use std::{process::Command, time::Duration};
     let account = account(std::env::var("USER").ok().as_deref());
     for service in services(config_dir) {
@@ -149,7 +169,7 @@ fn keychain(config_dir: Option<&Path>) -> anyhow::Result<Option<Credentials>> {
             &account,
             "-w",
         ]);
-        let output = super::run::run(command, b"", Duration::from_secs(3))
+        let output = super::run::run(command, b"", Duration::from_secs(3), false)
             .context("usage: the Keychain did not answer")?;
         // 44: no such item.
         if output.code == Some(44) {
@@ -158,7 +178,7 @@ fn keychain(config_dir: Option<&Path>) -> anyhow::Result<Option<Credentials>> {
         anyhow::ensure!(
             output.ok,
             "usage: the Keychain refused {service}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            super::run::complaint(&output.stderr)
         );
         let text = String::from_utf8(output.stdout).context("usage: keychain item not UTF-8")?;
         if let Some(found) = parse(text.trim())? {

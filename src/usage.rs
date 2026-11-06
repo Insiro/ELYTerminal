@@ -399,15 +399,18 @@ fn fetcher(kind: Kind, cx: &mut Context<Usage>) -> Task<()> {
             if !due {
                 continue;
             }
-            let outcome = cx
-                .background_executor()
-                .spawn(async move {
-                    match kind {
-                        Kind::Claude => api::fetch(),
-                        Kind::Codex => appserver::fetch(),
-                    }
-                })
-                .await;
+            // A fetch blocks up to a minute, so on a thread of its own, not the executor's pool.
+            let (sent, outcome) = futures::channel::oneshot::channel();
+            std::thread::spawn(move || {
+                let _ = sent.send(match kind {
+                    Kind::Claude => api::fetch(),
+                    Kind::Codex => appserver::fetch(),
+                });
+            });
+            let Ok(outcome) = outcome.await else {
+                log::error!("usage: {kind:?}'s fetch thread died");
+                continue;
+            };
             if this
                 .update(cx, |this, cx| this.fetched(kind, outcome, cx))
                 .is_err()

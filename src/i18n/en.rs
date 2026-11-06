@@ -427,12 +427,12 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.usage.claude_api", "Fetch Claude usage"),
     (
         "et.usage.claude_api_hint",
-        "Asks Anthropic every 5 minutes while shown, with Claude Code's sign-in, read only",
+        "Asks Anthropic every 10 minutes while shown, with Claude Code's sign-in, read only",
     ),
     ("et.usage.codex_live", "Ask Codex for live usage"),
     (
         "et.usage.codex_live_hint",
-        "Runs codex app-server, else asks ChatGPT, every 5 minutes while shown",
+        "Runs codex app-server, else asks ChatGPT, every 10 minutes while shown",
     ),
     ("et.usage.summary", "Summary in the projects column"),
     (

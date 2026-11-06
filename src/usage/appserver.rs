@@ -1,7 +1,7 @@
 //! Codex's limits from `codex app-server` over JSON-RPC on stdio, as Orca asks it; ChatGPT's page when it fails.
 
 use std::{
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Mutex, mpsc},
@@ -19,6 +19,8 @@ use super::{
     time, web,
 };
 
+/// The longest line the server may write.
+const LINE: u64 = 1 << 20;
 /// Each answer's wait.
 const WAIT: Duration = Duration::from_secs(10);
 /// The arguments Orca starts the server with: read only, never asking.
@@ -52,7 +54,7 @@ pub fn fetch() -> Outcome {
     };
     let web = web::fetch(now).inspect_err(|error| log::warn!("{error:#}"));
     match (web, failed) {
-        (Ok(Some(fetched)), _) => Outcome::Read(fetched),
+        (Ok(Some(outcome)), _) => outcome,
         (_, None) => Outcome::Trouble(Trouble::NoCodex),
         (_, Some(why)) => Outcome::Trouble(Trouble::Failed(why)),
     }
@@ -86,14 +88,7 @@ pub fn ask(program: &Path, args: &[&str], wait: Duration) -> anyhow::Result<Valu
     let stdout = child.child.stdout.take().context("usage: no stdout")?;
     let stderr = drain(child.child.stderr.take());
     let (lines, read) = mpsc::channel();
-    thread::spawn(move || {
-        for line in BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
-            if lines.send(line).is_err() {
-                break;
-            }
-        }
-    });
+    thread::spawn(move || capped(BufReader::new(stdout), LINE, &lines));
     let mut say = |message: Value| -> anyhow::Result<()> {
         writeln!(stdin, "{message}").context("usage: codex's app server closed its input")?;
         stdin
@@ -110,7 +105,7 @@ pub fn ask(program: &Path, args: &[&str], wait: Duration) -> anyhow::Result<Valu
     });
     drop(child);
     answered.map_err(|error| {
-        let said = stderr.join();
+        let (said, _) = stderr.join();
         let said = String::from_utf8_lossy(&said);
         let tail = said.trim().lines().last().unwrap_or_default().to_string();
         match tail.is_empty() {
@@ -118,6 +113,30 @@ pub fn ask(program: &Path, args: &[&str], wait: Duration) -> anyhow::Result<Valu
             false => error.context(tail),
         }
     })
+}
+
+/// Sends each line of `reader` up to `limit` bytes; a longer one is read past and dropped.
+pub fn capped(mut reader: impl BufRead, limit: u64, lines: &mpsc::Sender<String>) {
+    loop {
+        let mut line = Vec::new();
+        match (&mut reader).take(limit + 1).read_until(b'\n', &mut line) {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        if line.len() as u64 > limit {
+            log::warn!("usage: codex's app server wrote a line past {limit} bytes; it is dropped");
+            if !line.ends_with(b"\n") && reader.skip_until(b'\n').is_err() {
+                return;
+            }
+            continue;
+        }
+        if lines
+            .send(String::from_utf8_lossy(&line).into_owned())
+            .is_err()
+        {
+            return;
+        }
+    }
 }
 
 /// The result of the answer to `id`, passing notifications and other lines by.
@@ -295,7 +314,7 @@ fn shell_found() -> Option<Found> {
         "-ilc",
         "printf '\\036%s\\036%s\\036' \"$(command -v codex)\" \"$(command -v node)\"",
     ]);
-    let output = super::run::run(command, b"", Duration::from_secs(5))
+    let output = super::run::run(command, b"", Duration::from_secs(5), true)
         .inspect_err(|error| log::warn!("{error:#}"))
         .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);

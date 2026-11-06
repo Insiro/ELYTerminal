@@ -180,6 +180,41 @@ fn a_watch_fetches_at_once_then_every_five_minutes() {
 }
 
 #[test]
+fn curl_s_complaint_and_headers_stay_clean() {
+    let stderr = b"curl: (6) one\n> Authorization: Bearer x\n\n";
+    assert_eq!(run::complaint(stderr), "curl: (6) one");
+    assert_eq!(run::complaint(b""), "no message");
+    for value in ["a\tb", "a\u{7f}", "a\"b", "a\\b", "a\nb"] {
+        assert!(
+            run::get("https://127.0.0.1:1/", &[("X", value)]).is_err(),
+            "{value:?}"
+        );
+    }
+    assert_eq!(EVERY, Duration::from_secs(600));
+}
+
+#[test]
+fn long_lines_and_large_output_are_dropped() {
+    let (sent, read) = std::sync::mpsc::channel();
+    let text = format!("{}\nshort\n{}", "x".repeat(40), "y".repeat(40));
+    appserver::capped(text.as_bytes(), 16, &sent);
+    drop(sent);
+    assert_eq!(read.iter().collect::<Vec<_>>(), ["short\n"]);
+    let big = vec![b'z'; (4 << 20) + 10];
+    let (kept, large) = run::drain(Some(std::io::Cursor::new(big))).join();
+    assert_eq!((kept.len(), large), (4 << 20, true));
+    let (kept, large) = run::drain(Some(std::io::Cursor::new(b"ok".to_vec()))).join();
+    assert_eq!((kept, large), (b"ok".to_vec(), false));
+    let output = run::Output {
+        ok: true,
+        code: Some(0),
+        stdout: b"secret".to_vec(),
+        stderr: Vec::new(),
+    };
+    assert!(!format!("{output:?}").contains("secret"));
+}
+
+#[test]
 fn a_rate_limit_holds_even_a_new_watch() {
     let start = Instant::now();
     let mut schedule = Schedule::default();
@@ -188,7 +223,7 @@ fn a_rate_limit_holds_even_a_new_watch() {
     assert!(!schedule.due(false, start));
     assert!(
         !schedule.due(true, start + EVERY - Duration::from_secs(1)),
-        "at least 5 min"
+        "at least the 10-minute cadence"
     );
     assert!(schedule.due(true, start + EVERY));
     schedule.done(&Outcome::Limited(None), start + EVERY);
