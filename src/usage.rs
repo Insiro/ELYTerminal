@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Context as _;
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 
 use crate::settings::SettingsStore;
@@ -166,8 +165,7 @@ impl Drop for Watch {
 
 /// The usage folder in the app's config folder.
 pub fn folder() -> anyhow::Result<std::path::PathBuf> {
-    let config = dirs::config_dir().context("usage: the platform names no config folder")?;
-    Ok(config.join("ELYTerminal").join("usage"))
+    Ok(crate::identity::config_dir()?.join("usage"))
 }
 
 /// Starts the app's usage, resting until watched.

@@ -38,9 +38,9 @@
 
 设置窗口把每一次改动立刻存到平台配置文件夹里的 `settings.json`：
 
-- macOS：`~/Library/Application Support/ELYTerminal/settings.json`
-- Linux：`$XDG_CONFIG_HOME/ELYTerminal/settings.json`，否则 `~/.config/ELYTerminal/settings.json`
-- Windows：`%APPDATA%\ELYTerminal\settings.json`
+- macOS：`~/Library/Application Support/ELYTerminal Insiro/settings.json`
+- Linux：`$XDG_CONFIG_HOME/ELYTerminal Insiro/settings.json`，否则 `~/.config/ELYTerminal Insiro/settings.json`
+- Windows：`%APPDATA%\ELYTerminal Insiro\settings.json`
 
 文件解析失败，或某个值超出范围，启动会停下来，错误指出文件和字段。应用从不覆盖它。
 

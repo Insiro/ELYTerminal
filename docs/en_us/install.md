@@ -23,7 +23,7 @@ sudo dnf install ./elyterminal-VERSION-1.x86_64.rpm
 
 Install a newer package the same way to update. To remove it, use
 `sudo apt remove elyterminal` or `sudo dnf remove elyterminal`.
-Package operations leave `~/.config/ELYTerminal` alone.
+Package operations leave `~/.config/ELYTerminal Insiro` alone.
 
 The AppImage runs without a system installation:
 

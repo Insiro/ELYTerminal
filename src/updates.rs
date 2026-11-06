@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::{settings::SettingsStore, workspace::TITLE};
 
 /// The latest published release.
-const LATEST: &str = "https://api.github.com/repos/ELY-Open-Source/ELYTerminal/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/Insiro/ELYTerminal/releases/latest";
 /// How long an automatic check waits for the next.
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 /// A newer release's notification tag, before its version.

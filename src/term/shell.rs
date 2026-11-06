@@ -44,10 +44,7 @@ impl Global for ShellIntegration {}
 impl ShellIntegration {
     /// Writes the scripts into the platform's data folder and keeps its path.
     pub fn init(cx: &mut App) -> anyhow::Result<()> {
-        let dir = dirs::data_local_dir()
-            .context("shell integration: the platform names no data folder")?
-            .join("ELYTerminal")
-            .join("shell-integration");
+        let dir = crate::identity::data_dir()?.join("shell-integration");
         install(&dir)?;
         cx.set_global(Self(dir));
         Ok(())

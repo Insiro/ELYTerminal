@@ -78,7 +78,7 @@ def main():
         + "\nsleep 25\n"
     )
     shell.chmod(0o755)
-    config = base / "config" / "ELYTerminal"
+    config = base / "config" / "ELYTerminal Insiro"
     config.mkdir(parents=True)
     (config / "settings.json").write_text(json.dumps({
         "shell": str(shell), "check_updates": False, "ely": False,

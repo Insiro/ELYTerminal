@@ -1,5 +1,5 @@
 #!/bin/sh
-# mac-app.sh: ELYTerminal.app in target/release and its disk image, signed ad hoc, or by SIGN_IDENTITY and notarized.
+# mac-app.sh: ELYTerminal Insiro.app in target/release and its disk image, signed ad hoc, or by SIGN_IDENTITY and notarized.
 set -eu
 cd "$(dirname "$0")/.."
 sign=${SIGN_IDENTITY:-}
@@ -18,7 +18,7 @@ version=$(cargo pkgid)
 version=${version##*[#@]}
 case $version in [0-9]*) ;; *) echo "mac-app: cargo pkgid names no version" >&2; exit 1 ;; esac
 out=${CARGO_TARGET_DIR:-target}/release
-app=$out/ELYTerminal.app
+app="$out/ELYTerminal Insiro.app"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cargo run --release --locked --quiet --example icons -- \
@@ -33,12 +33,12 @@ cat > "$app/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>ELYTerminal</string>
+  <key>CFBundleDisplayName</key><string>ELYTerminal Insiro</string>
   <key>CFBundleExecutable</key><string>elyterminal</string>
   <key>CFBundleIconFile</key><string>ELYTerminal</string>
-  <key>CFBundleIdentifier</key><string>com.zacharyzhang.elyterminal</string>
+  <key>CFBundleIdentifier</key><string>com.insiro.elyterminal</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>ELYTerminal</string>
+  <key>CFBundleName</key><string>ELYTerminal Insiro</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
@@ -55,10 +55,10 @@ else
   codesign --force --sign - "$app"
 fi
 mkdir "$work/disk"
-ditto "$app" "$work/disk/ELYTerminal.app"
+ditto "$app" "$work/disk/ELYTerminal Insiro.app"
 ln -s /Applications "$work/disk/Applications"
-dmg=$out/ELYTerminal-$version.dmg
-hdiutil create -quiet -volname ELYTerminal -srcfolder "$work/disk" -ov -format UDZO "$dmg"
+dmg=$out/ELYTerminal-Insiro-$version.dmg
+hdiutil create -quiet -volname "ELYTerminal Insiro" -srcfolder "$work/disk" -ov -format UDZO "$dmg"
 if [ -n "$sign" ]; then
   codesign --force --timestamp --sign "$sign" "$dmg"
   notary() { xcrun notarytool "$@" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"; }
