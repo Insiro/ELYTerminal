@@ -1,22 +1,29 @@
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     rc::Rc,
 };
 
 use ely_gpui_component::{
     forms::TextInput,
-    git::{ChangeAction, ChangeSection, Commit, DiffLayout, Stretch},
+    git::{ChangeAction, ChangeSection, Commit, DiffLayout, GraphRow, Stretch},
     i18n::{I18n, text},
 };
 use gpui::{AppContext, Context, Entity, EventEmitter, SharedString, Subscription, Task, Window};
 
-use self::view::{is_folder, shown};
+use self::view::{is_folder, loss, shown};
 use super::{Change, Repo};
+use crate::settings::SettingsStore;
 
+mod grouped;
+mod tree;
 mod view;
 
 /// The newest commits the panel lists.
 const RECENT: usize = 50;
+
+/// A repository read, its recent commits and their lanes.
+type Read = (Repo, Vec<Commit>, Vec<GraphRow>);
 
 /// What the shown folder reads as.
 #[derive(PartialEq)]
@@ -24,7 +31,16 @@ enum State {
     Reading,
     Outside,
     Failed(SharedString),
-    Read(Repo, Rc<Vec<Commit>>),
+    Read(Repo, Rc<Vec<Commit>>, Rc<Vec<GraphRow>>),
+}
+
+/// A discard asked and not yet confirmed: what goes, its name and what it costs.
+#[derive(Clone)]
+struct Discarding {
+    changes: Vec<Change>,
+    section: ChangeSection,
+    name: SharedString,
+    cost: &'static str,
 }
 
 /// An open diff: file, section, lines or why none.
@@ -61,12 +77,17 @@ pub struct GitPanel {
     amend: bool,
     diff: Option<Diff>,
     layout: DiffLayout,
-    discarding: Option<(Change, ChangeSection)>,
+    discarding: Option<Discarding>,
+    /// Changes grouped by folder, as the settings keep it.
+    tree: bool,
+    /// The folders shut in each section, by key.
+    shut: HashSet<(&'static str, SharedString)>,
     reading: Task<()>,
     opening: Task<()>,
     /// The last action asked; each waits for the one before it.
     acting: Task<()>,
     _language: Subscription,
+    _settings: Subscription,
 }
 
 impl EventEmitter<Acted> for GitPanel {}
@@ -94,11 +115,34 @@ impl GitPanel {
             diff: None,
             layout: DiffLayout::Unified,
             discarding: None,
+            tree: SettingsStore::get(cx).git_tree,
+            shut: HashSet::new(),
             reading: Task::ready(()),
             opening: Task::ready(()),
             acting: Task::ready(()),
             _language: cx.observe_global::<I18n>(Self::speak),
+            _settings: cx.observe_global::<SettingsStore>(|panel, cx| {
+                let tree = SettingsStore::get(cx).git_tree;
+                if tree != panel.tree {
+                    panel.tree = tree;
+                    cx.notify();
+                }
+            }),
         }
+    }
+
+    /// Lists changes flat or by folder, and keeps the choice.
+    fn flip_tree(&mut self, cx: &mut Context<Self>) {
+        let tree = !self.tree;
+        match SettingsStore::update(cx, |settings| settings.git_tree = tree) {
+            Ok(()) => log::info!(
+                "git panel: changes {}",
+                if tree { "by folder" } else { "flat" }
+            ),
+            Err(error) => log::error!("git panel: git_tree did not save: {error:#}"),
+        }
+        self.tree = SettingsStore::get(cx).git_tree;
+        cx.notify();
     }
 
     /// Words its fields again in the language just chosen.
@@ -118,7 +162,7 @@ impl GitPanel {
             log::info!("git panel: shows {}", folder.display());
             // Inside the shown work tree the view stays while it reads, so a cd does not blank it.
             let inside =
-                matches!(&self.state, State::Read(repo, _) if folder.starts_with(&repo.top));
+                matches!(&self.state, State::Read(repo, ..) if folder.starts_with(&repo.top));
             if !inside {
                 self.state = State::Reading;
             }
@@ -133,7 +177,7 @@ impl GitPanel {
     /// The repository shown, once it was read in the shown folder.
     fn current(&self) -> Option<&Repo> {
         match &self.state {
-            State::Read(repo, _) if self.read == self.folder => Some(repo),
+            State::Read(repo, ..) if self.read == self.folder => Some(repo),
             _ => None,
         }
     }
@@ -155,7 +199,8 @@ impl GitPanel {
                 Some(_) => super::log(&repo.top, RECENT)?,
                 None => Vec::new(),
             };
-            anyhow::Ok(Some((repo, commits)))
+            let graph = super::graph(&commits);
+            anyhow::Ok(Some((repo, commits, graph)))
         });
         self.reading = cx.spawn(async move |panel, cx| {
             let read = read.await;
@@ -163,9 +208,9 @@ impl GitPanel {
         });
     }
 
-    fn store(&mut self, read: anyhow::Result<Option<(Repo, Vec<Commit>)>>, cx: &mut Context<Self>) {
+    fn store(&mut self, read: anyhow::Result<Option<Read>>, cx: &mut Context<Self>) {
         let state = match read {
-            Ok(Some((repo, commits))) => State::Read(repo, Rc::new(commits)),
+            Ok(Some((repo, commits, graph))) => State::Read(repo, Rc::new(commits), Rc::new(graph)),
             Ok(None) => State::Outside,
             Err(error) => {
                 let folder = self.folder.display();
@@ -178,7 +223,7 @@ impl GitPanel {
             return;
         }
         match &state {
-            State::Read(repo, commits) => log::debug!(
+            State::Read(repo, commits, _) => log::debug!(
                 "git panel: {} on {:?}, {} conflicted, {} staged, {} unstaged, {} untracked, {} commits",
                 repo.top.display(),
                 repo.branch,
@@ -255,7 +300,14 @@ impl GitPanel {
                 self.act("et.git.unstage_failed", top, work, |_, _| {}, cx)
             }
             ChangeAction::Discard => {
-                self.discarding = Some((change, section));
+                let (name, cost) = (shown(&change.path), loss(&change, section));
+                let changes = vec![change];
+                self.discarding = Some(Discarding {
+                    changes,
+                    section,
+                    name,
+                    cost,
+                });
                 cx.notify();
             }
             ChangeAction::Open => self.open(top, change, section, cx),
@@ -279,13 +331,20 @@ impl GitPanel {
         }
     }
 
-    fn discard(&mut self, change: Change, section: ChangeSection, cx: &mut Context<Self>) {
+    fn discard(&mut self, discarding: Discarding, cx: &mut Context<Self>) {
         let Some(repo) = self.current() else {
-            return self.waits(&format!("Discard {}", change.path.display()));
+            return self.waits(&format!("Discard {}", discarding.name));
         };
         let top = repo.top.clone();
-        log::info!("git panel: discarding {} confirmed", change.path.display());
-        let work = move |top: &Path| super::discard(top, &change, section);
+        log::info!("git panel: discarding {} confirmed", discarding.name);
+        let Discarding {
+            changes, section, ..
+        } = discarding;
+        let work = move |top: &Path| {
+            changes
+                .iter()
+                .try_for_each(|change| super::discard(top, change, section))
+        };
         self.act("et.git.discard_failed", top, work, |_, _| {}, cx);
     }
 
