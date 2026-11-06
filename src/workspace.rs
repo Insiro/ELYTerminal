@@ -36,6 +36,7 @@ mod events;
 mod folder;
 mod panel;
 mod panels;
+mod parked;
 mod persist;
 mod preview;
 mod projects;
@@ -47,6 +48,7 @@ mod tabs;
 mod toggles;
 mod usage;
 mod widths;
+mod worktrees;
 
 use dialogs::Asking;
 pub use persist::Boot;
@@ -126,6 +128,8 @@ pub struct Workspace {
     refreshed: Option<Instant>,
     /// The saved tabs of each home not woken yet.
     dormant: HashMap<Home, Dormant>,
+    /// Tabs saved for later, in the order saved.
+    parked: Vec<crate::projects::store::Parked>,
     /// How each restored Claude tab starts.
     modes: Modes,
     /// Saves `workspace.json`, once restored.
@@ -200,6 +204,7 @@ impl Workspace {
             next_project: 0,
             refreshed: None,
             dormant: HashMap::new(),
+            parked: Vec::new(),
             modes: Modes::default(),
             persist: None,
             asking: None,

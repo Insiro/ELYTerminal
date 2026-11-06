@@ -20,7 +20,7 @@ pub(crate) mod wsl;
 
 pub use diff::diff;
 pub use graph::graph;
-pub use worktree::{Worktree, worktrees};
+pub use worktree::{Worktree, remove_worktree, worktree_dirty, worktrees};
 
 /// Git's arguments on one line, for messages.
 fn line<A: AsRef<OsStr>>(args: &[A]) -> String {
@@ -45,6 +45,7 @@ fn git<A: AsRef<OsStr>>(folder: &Path, args: &[A], input: &[u8]) -> anyhow::Resu
         .args(["--no-optional-locks", "--literal-pathspecs"])
         .args(args)
         .env("LC_ALL", "C")
+        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(if input.is_empty() {
             Stdio::null()
         } else {

@@ -73,9 +73,26 @@ pub(super) fn project(workspace: &Entity<Workspace>, project: &Project, cx: &App
         )
 }
 
-pub(super) fn worktree(workspace: &Entity<Workspace>, home: Home, path: PathBuf, cx: &App) -> Menu {
+/// A linked worktree's menu; `removable` names its project and branch when git may remove it.
+pub(super) fn worktree(
+    workspace: &Entity<Workspace>,
+    (home, path): (Home, PathBuf),
+    removable: Option<(u64, Option<String>)>,
+    cx: &App,
+) -> Menu {
     let copied = path.clone();
-    Menu::new()
+    let remove = removable.map(|(project, branch)| {
+        let (workspace, path) = (workspace.clone(), path.clone());
+        MenuItem::new(text(cx, "et.worktree.remove", &[]))
+            .icon(IconName::Trash2)
+            .on_click(move |window, cx| {
+                let asked = (project, path.clone());
+                workspace.update(cx, |this, cx| {
+                    this.ask_remove_worktree(asked, branch.clone(), window, cx)
+                })
+            })
+    });
+    let menu = Menu::new()
         .item(new_terminal(workspace, home.clone(), cx))
         .item(new_claude(workspace, home, cx))
         .item(
@@ -89,5 +106,9 @@ pub(super) fn worktree(workspace: &Entity<Workspace>, home: Home, path: PathBuf,
                     None => log::error!("app: {} is no UTF-8 to copy", copied.display()),
                 }),
         )
-        .item(reveal(path, cx))
+        .item(reveal(path, cx));
+    match remove {
+        Some(remove) => menu.separator().item(remove),
+        None => menu,
+    }
 }

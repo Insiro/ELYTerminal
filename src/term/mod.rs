@@ -26,6 +26,7 @@ mod procs;
 mod prompts;
 mod pty;
 mod reports;
+mod screen;
 mod scrollbar;
 pub mod shell;
 mod status;

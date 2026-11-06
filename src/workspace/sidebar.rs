@@ -17,7 +17,7 @@ use gpui::{
 
 use super::{
     Tab, Workspace,
-    projects::{Project, Row, Trees, children},
+    projects::{Project, Row, Tree, Trees, children},
 };
 use crate::{
     projects::Home,
@@ -65,6 +65,7 @@ impl Workspace {
             || self.selected == Home::Others
             || self.tabs.iter().any(|tab| tab.home == Home::Others)
             || self.dormant.contains_key(&Home::Others)
+            || self.parked.iter().any(|parked| parked.home == Home::Others)
     }
 
     /// Some tab's orb moves `now`, so a row may draw it.
@@ -124,7 +125,8 @@ impl Workspace {
             .flex()
             .flex_col()
             .children(projects)
-            .children(others);
+            .children(others)
+            .children(self.parked_rows(&Home::Others, cx));
         let list = if drags { self.track(list, cx) } else { list };
         let summary = SettingsStore::get(cx).usage_summary;
         let summary = summary
@@ -150,6 +152,8 @@ impl Workspace {
         let (id, home) = (project.id, project.home());
         let homes = self.tabs.iter().map(|tab| &tab.home);
         let trees = children(project, homes.chain(self.dormant.keys()));
+        let parked = self.parked.iter().map(|parked| &parked.home);
+        let trees = trees_with(trees, children(project, parked));
         let toggle = workspace.clone();
         let disclosure = (!trees.is_empty()).then(|| {
             div()
@@ -222,18 +226,44 @@ impl Workspace {
             if let Some(mark) = self.mark(&Row::Tree(home.clone()), now, cx) {
                 item = item.trailing(mark);
             }
-            let menu = menu::worktree(&workspace, home, tree.path, cx);
-            ContextMenu::new(gpui::ElementId::Name(format!("menu:{key}").into()), menu)
+            // git lists the main worktree first; only a linked one it lists may go.
+            let removable = match &project.trees {
+                Trees::Git(listed) => listed
+                    .iter()
+                    .skip(1)
+                    .any(|listed| listed.path == tree.path)
+                    .then(|| (id, tree.branch.clone())),
+                _ => None,
+            };
+            let saved = self.parked_rows(&home, cx);
+            let menu = menu::worktree(&workspace, (home, tree.path), removable, cx);
+            let row = ContextMenu::new(gpui::ElementId::Name(format!("menu:{key}").into()), menu)
                 .pl_4()
-                .child(item)
+                .child(item);
+            div()
+                .flex()
+                .flex_col()
+                .child(row)
+                .child(div().pl_4().flex().flex_col().children(saved))
         });
         div()
             .flex()
             .flex_col()
             .child(head)
+            .children(self.parked_rows(&project.home(), cx))
             .child(Collapsible::new(("project-trees", id as usize), project.open).children(rows))
             .into_any_element()
     }
+}
+
+/// `trees`, then each of `more` whose folder it lacks.
+fn trees_with(mut trees: Vec<Tree>, more: Vec<Tree>) -> Vec<Tree> {
+    for tree in more {
+        if !trees.iter().any(|kept| kept.path == tree.path) {
+            trees.push(tree);
+        }
+    }
+    trees
 }
 
 /// A bell, or a wait heard while hidden that its orb does not show.

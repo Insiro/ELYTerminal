@@ -162,7 +162,7 @@ impl Workspace {
             .map(|at| self.tabs[at].id)
             .collect();
         let current = self.current_id() == Some(id);
-        if matches!(&self.asking, Some(Asking::RenameTab { id: asked, .. } | Asking::CloseClaude { id: asked }) if *asked == id)
+        if matches!(&self.asking, Some(Asking::RenameTab { id: asked, .. } | Asking::CloseClaude { id: asked } | Asking::Park { id: asked }) if *asked == id)
         {
             self.asking = None;
         }

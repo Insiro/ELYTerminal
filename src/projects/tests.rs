@@ -53,6 +53,7 @@ fn state(claude: Option<&str>) -> State {
             preview: Some("/p/app/README.md".into()),
             open: vec!["/p/app/src".into()],
         }],
+        parked: Vec::new(),
     }
 }
 
