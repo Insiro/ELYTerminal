@@ -167,7 +167,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ),
     ("et.terminal.auto_updates_hint", "At start and once a day"),
     ("et.explorer.title", "Explorer menu"),
-    ("et.explorer.open", "Open in ELYTerminal"),
+    ("et.explorer.open", "Open in ELYTerminal Insiro"),
     (
         "et.explorer.added",
         "A folder's right-click menu opens it here; on Windows 11, under Show more options.",

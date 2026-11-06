@@ -1,4 +1,4 @@
-//! Open in ELYTerminal on Explorer's folder menus, for this user.
+//! Open in ELYTerminal Insiro on Explorer's folder menus, for this user.
 
 use std::{ffi::OsString, os::windows::ffi::OsStrExt, path::Path};
 
@@ -16,8 +16,8 @@ pub const CLASSES: &str = r"Software\Classes";
 
 /// A folder's menu and its background's, under the classes.
 const ENTRIES: [&str; 2] = [
-    r"Directory\shell\ELYTerminal",
-    r"Directory\Background\shell\ELYTerminal",
+    r"Directory\shell\ELYTerminalInsiro",
+    r"Directory\Background\shell\ELYTerminalInsiro",
 ];
 
 /// What the menu holds now.
@@ -82,7 +82,7 @@ pub fn remove(classes: &str) -> anyhow::Result<()> {
             bail!("explorer: cannot delete {classes}\\{entry}: error {status}");
         }
     }
-    log::info!("explorer: the menu no longer opens ELYTerminal");
+    log::info!("explorer: the menu no longer opens ELYTerminal Insiro");
     Ok(())
 }
 

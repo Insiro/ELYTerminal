@@ -22,7 +22,7 @@ sudo dnf install ./elyterminal-VERSION-1.x86_64.rpm
 
 更新时用同样方式安装更新的软件包。卸载用
 `sudo apt remove elyterminal` 或 `sudo dnf remove elyterminal`。
-软件包操作不会动 `~/.config/ELYTerminal`。
+软件包操作不会动 `~/.config/ELYTerminal Insiro`。
 
 AppImage 无需系统安装即可运行：
 

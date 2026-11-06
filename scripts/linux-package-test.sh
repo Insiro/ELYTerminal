@@ -10,10 +10,10 @@ case $package in /*) ;; *) fail "package path must be absolute" ;; esac
 [ "$(id -u)" -eq 0 ] || fail "container package tests need root"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-app_id=com.zacharyzhang.elyterminal
+app_id=com.insiro.elyterminal
 
 seed_config() {
-    config=/home/ci/.config/ELYTerminal/settings.json
+    config="/home/ci/.config/ELYTerminal Insiro/settings.json"
     [ ! -e "$config" ] || fail "refusing to replace an existing settings file"
     mkdir -p "$(dirname "$config")"
     printf '%s\n' '{"check_updates":false}' > "$config"

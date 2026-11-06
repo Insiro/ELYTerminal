@@ -79,7 +79,7 @@ pub struct SelectSession(pub usize);
 pub const CONTEXT: &str = "Workspace";
 
 /// The window's title while the program names none.
-pub const TITLE: &str = "ELYTerminal";
+pub const TITLE: &str = crate::identity::NAME;
 
 /// Ghostty's keys: Cmd on macOS; off it, Ctrl-Shift for keys a terminal takes, Alt for digits.
 pub fn bind_keys(cx: &mut App) {

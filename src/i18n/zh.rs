@@ -155,7 +155,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.terminal.auto_updates", "自动检查更新"),
     ("et.terminal.auto_updates_hint", "启动时及每天一次"),
     ("et.explorer.title", "资源管理器菜单"),
-    ("et.explorer.open", "在 ELYTerminal 中打开"),
+    ("et.explorer.open", "在 ELYTerminal Insiro 中打开"),
     (
         "et.explorer.added",
         "文件夹的右键菜单可在此打开；Windows 11 中位于“显示更多选项”下。",
