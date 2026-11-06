@@ -23,8 +23,7 @@ pub mod args;
 /// How long the window's size holds before it is kept, so a drag saves once.
 const SETTLE: Duration = Duration::from_millis(500);
 
-/// The id the macOS bundle and Linux desktop entry share.
-pub const APP_ID: &str = "com.zacharyzhang.elyterminal";
+pub use crate::identity::APP_ID;
 
 /// Fonts, settings, language and scripts, checked before any window.
 pub fn start(cx: &mut App) -> anyhow::Result<()> {
@@ -47,6 +46,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
             "app: {family} is not among the registered fonts"
         );
     }
+    crate::identity::migrate::run();
     SettingsStore::init(cx)?;
     i18n::init(cx);
     crate::interface::init(cx);

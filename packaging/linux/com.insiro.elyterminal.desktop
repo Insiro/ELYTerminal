@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=ELYTerminal
+Name=ELYTerminal Insiro
 Comment=A terminal on GPUI and Ely
 Exec=elyterminal
 X-TerminalArgDir=--working-directory
-Icon=com.zacharyzhang.elyterminal
+Icon=com.insiro.elyterminal
 Terminal=false
 Categories=System;TerminalEmulator;
-StartupWMClass=com.zacharyzhang.elyterminal
+StartupWMClass=com.insiro.elyterminal

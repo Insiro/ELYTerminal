@@ -120,8 +120,7 @@ pub enum Loaded {
 
 /// `workspace.json` in the platform config folder, beside `settings.json`.
 pub fn default_path() -> anyhow::Result<PathBuf> {
-    let folder = dirs::config_dir().context("workspace: the platform names no config folder")?;
-    Ok(folder.join("ELYTerminal").join("workspace.json"))
+    Ok(crate::identity::config_dir()?.join("workspace.json"))
 }
 
 impl State {

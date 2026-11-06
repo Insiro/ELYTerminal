@@ -38,9 +38,9 @@ Settings › Terminal lists them all, as this platform binds them. The table is 
 
 The settings window saves each change at once to `settings.json` in the platform's config folder:
 
-- macOS: `~/Library/Application Support/ELYTerminal/settings.json`
-- Linux: `$XDG_CONFIG_HOME/ELYTerminal/settings.json`, else `~/.config/ELYTerminal/settings.json`
-- Windows: `%APPDATA%\ELYTerminal\settings.json`
+- macOS: `~/Library/Application Support/ELYTerminal Insiro/settings.json`
+- Linux: `$XDG_CONFIG_HOME/ELYTerminal Insiro/settings.json`, else `~/.config/ELYTerminal Insiro/settings.json`
+- Windows: `%APPDATA%\ELYTerminal Insiro\settings.json`
 
 A file that does not parse, or holds a value out of range, stops the start with an error naming the file and the field. The app never overwrites it.
 

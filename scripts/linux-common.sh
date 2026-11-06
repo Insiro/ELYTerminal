@@ -63,7 +63,7 @@ linux_init() {
     [ "$newest" = 2.35 ] || {
         echo "linux-packaging: binary requires glibc $glibc, above the 2.35 baseline" >&2; exit 1
     }
-    id=com.zacharyzhang.elyterminal
+    id=com.insiro.elyterminal
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
     trap 'exit 1' HUP INT TERM

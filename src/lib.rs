@@ -7,6 +7,7 @@ pub mod explorer;
 pub mod files;
 pub mod git;
 pub mod i18n;
+pub mod identity;
 pub mod interface;
 pub mod menus;
 pub mod pet;
