@@ -31,6 +31,12 @@ pub(super) enum Asking {
         id: TabId,
     },
     RemoveWorktree(super::worktrees::Removal),
+    /// Saving for later a tab whose shell runs a command.
+    Park {
+        id: TabId,
+    },
+    DeleteParked(crate::projects::store::Parked),
+    ParkedScreen(crate::projects::store::Parked),
 }
 
 impl Workspace {
@@ -121,6 +127,9 @@ impl Workspace {
         let submit = cx.entity();
         Some(match self.asking.as_ref()? {
             Asking::RemoveWorktree(removal) => self.removal_dialog(removal, closed, cx)?,
+            asking @ (Asking::Park { .. } | Asking::DeleteParked(_) | Asking::ParkedScreen(_)) => {
+                self.parked_dialog(asking, closed, cx)?
+            }
             Asking::RenameTab { id, field } => {
                 let id = *id;
                 PromptDialog::new(

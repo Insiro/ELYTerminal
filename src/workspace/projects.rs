@@ -376,6 +376,7 @@ impl Workspace {
         self.projects.remove(at);
         self.shown.retain(|home, _| !inside(home));
         self.dormant.retain(|home, _| !inside(home));
+        self.drop_parked(inside);
         self.dirty(cx);
         cx.notify();
     }

@@ -168,7 +168,13 @@ impl Workspace {
         };
         let mut state = state;
         let panels = std::mem::take(&mut state.panels);
+        let parked = std::mem::take(&mut state.parked);
         let (projects, dormant, selected) = parts(state, &mut self.next_project);
+        self.parked = parked;
+        self.drop_parked(|home| match home {
+            Home::Tree { project, .. } => !projects.iter().any(|kept| kept.folder == *project),
+            Home::Others => false,
+        });
         log::info!(
             "workspace: {} projects and {} homes of saved tabs restored",
             projects.len(),
@@ -249,6 +255,7 @@ impl Workspace {
             .collect();
         let mut state = state(&self.projects, live, &self.dormant, &self.selected);
         state.panels = self.saved_panels(cx);
+        state.parked = self.parked.clone();
         state
     }
 

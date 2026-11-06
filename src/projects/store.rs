@@ -24,6 +24,32 @@ pub struct State {
     /// Each home's right column, absent in files from before.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub panels: Vec<SavedPanel>,
+    /// Tabs saved for later, absent in files from before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parked: Vec<Parked>,
+}
+
+/// A terminal tab closed to resume later: where it lived and ran, and what it last showed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Parked {
+    pub home: Home,
+    /// The user's name for it, else its program's title.
+    pub name: String,
+    /// The user gave it that name, which a resume keeps.
+    #[serde(default)]
+    pub renamed: bool,
+    /// The folder it last reported; none for home.
+    pub folder: Option<PathBuf>,
+    pub shell: String,
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub claude: Option<String>,
+    /// When it was saved, in seconds since the Unix epoch.
+    pub saved: u64,
+    /// Its screen and last history lines as plain text.
+    #[serde(default)]
+    pub screen: String,
 }
 
 /// A home's right column: its tab, its preview, and the folders its tree showed open.
@@ -106,6 +132,7 @@ impl State {
             projects: Vec::new(),
             others: SavedSpace::default(),
             panels: Vec::new(),
+            parked: Vec::new(),
         }
     }
 
@@ -136,6 +163,20 @@ impl State {
             for path in panel.preview.iter().chain(&panel.open) {
                 absolute(path)?;
             }
+        }
+        for parked in &self.parked {
+            if let Home::Tree { project, path } = &parked.home {
+                absolute(project)?;
+                absolute(path)?;
+            }
+            let tab = SavedTab::Terminal {
+                name: String::new(),
+                shell: String::new(),
+                args: Vec::new(),
+                folder: parked.folder.clone(),
+                claude: parked.claude.clone(),
+            };
+            check_tabs(&[tab])?;
         }
         check_tabs(&self.others.tabs)
     }

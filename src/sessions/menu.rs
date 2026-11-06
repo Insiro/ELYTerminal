@@ -28,6 +28,14 @@ pub fn tab(
                 .on_click(move |_, cx| copied.update(cx, |this, cx| this.copy_claude(id, cx))),
         );
     }
+    let parked = workspace.clone();
+    let menu = menu.item(
+        MenuItem::new(text(cx, "et.parked.save", &[]))
+            .icon(IconName::Archive)
+            .on_click(move |window, cx| {
+                parked.update(cx, |this, cx| this.ask_park(id, window, cx))
+            }),
+    );
     if !full {
         return menu;
     }

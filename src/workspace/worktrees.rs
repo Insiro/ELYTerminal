@@ -197,6 +197,7 @@ impl Workspace {
         self.shown.remove(&home);
         self.dormant.remove(&home);
         self.panels.remove(&home);
+        self.drop_parked(|parked| *parked == home);
         self.refresh(project, cx);
         self.dirty(cx);
         cx.notify();
