@@ -424,6 +424,16 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.usage.codex_hint",
         "Codex's limits and tokens from its newest session file, read only",
     ),
+    ("et.usage.claude_api", "Fetch Claude usage"),
+    (
+        "et.usage.claude_api_hint",
+        "Asks Anthropic every 5 minutes while shown, with Claude Code's sign-in, read only",
+    ),
+    ("et.usage.codex_live", "Ask Codex for live usage"),
+    (
+        "et.usage.codex_live_hint",
+        "Runs codex app-server, else asks ChatGPT, every 5 minutes while shown",
+    ),
     ("et.usage.summary", "Summary in the projects column"),
     (
         "et.usage.summary_hint",
@@ -468,4 +478,17 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.usage.summary_tip",
         "Agent usage; press to show the Usage tab",
     ),
+    ("et.usage.from_api", "from the API"),
+    ("et.usage.from_statusline", "from the statusLine"),
+    ("et.usage.from_appserver", "from codex app-server"),
+    ("et.usage.from_web", "from ChatGPT"),
+    ("et.usage.from_session", "from the session file"),
+    (
+        "et.usage.expired",
+        "Claude's sign-in expired; open Claude to refresh it",
+    ),
+    ("et.usage.no_token", "Not signed in"),
+    ("et.usage.no_codex", "codex not found"),
+    ("et.usage.limited", "Rate limited; next try in {n} min"),
+    ("et.usage.credits", "credits: {n}"),
 ];

@@ -120,11 +120,33 @@ impl SettingsWindow {
         let codex = switch(&this, "codex_usage", settings.codex_usage, |s, on| {
             s.codex_usage = on
         });
+        let claude_api = switch(
+            &this,
+            "claude_api_usage",
+            settings.claude_api_usage,
+            |s, on| s.claude_api_usage = on,
+        );
+        let codex_live = switch(
+            &this,
+            "codex_live_usage",
+            settings.codex_live_usage,
+            |s, on| s.codex_live_usage = on,
+        );
         let summary = switch(&this, "usage_summary", settings.usage_summary, |s, on| {
             s.usage_summary = on
         });
         let section = SettingsSection::new(word("et.settings.usage"))
+            .row(
+                SettingsRow::new(word("et.usage.claude_api"))
+                    .description(word("et.usage.claude_api_hint"))
+                    .control(claude_api),
+            )
             .row(claude)
+            .row(
+                SettingsRow::new(word("et.usage.codex_live"))
+                    .description(word("et.usage.codex_live_hint"))
+                    .control(codex_live),
+            )
             .row(
                 SettingsRow::new(word("et.usage.codex"))
                     .description(word("et.usage.codex_hint"))

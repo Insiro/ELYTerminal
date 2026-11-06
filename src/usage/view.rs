@@ -15,9 +15,10 @@ use gpui::{
 };
 
 use super::{
-    Limits, Usage, Window as Span,
+    Limits, Shown, Usage, Window as Span,
     codex::Tokens,
     install::Status,
+    live::Trouble,
     time::{self, Age, Reset},
 };
 use crate::settings::SettingsStore;
@@ -41,17 +42,18 @@ impl Render for UsageView {
         let usage = Usage::entity(cx).read(cx);
         let now = time::now();
         let word = |key: &str| text(cx, key, &[]);
+        let settings = SettingsStore::get(cx);
         let mut claude = section(word("et.usage.claude_title"), cx);
-        match (&usage.install, &usage.claude.value) {
-            (Some(Status::On), None) => {
+        match (usage.claude_shown(), &usage.install) {
+            (Some(shown), _) => {
+                claude = claude
+                    .children(meters("claude", shown.limits, now, cx))
+                    .child(age(now, shown, cx));
+            }
+            (None, Some(Status::On)) => {
                 claude = claude.child(Caption::new(word("et.usage.claude_waiting")))
             }
-            (_, Some(found)) => {
-                claude = claude
-                    .children(meters("claude", &found.limits, now, cx))
-                    .child(age(now, found.at, None, cx));
-            }
-            (_, None) => {
+            (None, _) => {
                 let open = Button::new("usage-open-settings", word("et.usage.open_settings"))
                     .size(ControlSize::Sm)
                     .on_click(|_, _, cx| crate::settings::window::usage::open_usage(cx));
@@ -60,29 +62,41 @@ impl Render for UsageView {
                     .child(div().child(open));
             }
         }
-        claude = claude.children(failure(&usage.claude.error));
+        claude = claude
+            .children(trouble(usage.claude_live.trouble.as_ref(), now, cx))
+            .children(failure(&usage.claude.error));
         let mut codex = section(word("et.usage.codex_title"), cx);
-        let reading = &usage.codex.value;
-        codex = match reading {
-            _ if !SettingsStore::get(cx).codex_usage => {
+        let file_on = settings.codex_usage;
+        let tokens = usage
+            .codex
+            .value
+            .as_ref()
+            .filter(|_| file_on)
+            .and_then(|reading| reading.tokens);
+        codex = match usage.codex_shown(file_on) {
+            _ if !file_on && !settings.codex_live_usage => {
                 codex.child(Caption::new(word("et.usage.codex_off")))
             }
-            None if usage.codex.checked => codex.child(Caption::new(word("et.usage.codex_none"))),
+            None if usage.codex.checked || usage.codex_live.trouble.is_some() => {
+                codex.child(Caption::new(word("et.usage.codex_none")))
+            }
             None => codex,
-            Some(reading) => codex
-                .children(meters("codex", &reading.limits, now, cx))
-                .children(
-                    reading
-                        .tokens
-                        .map(|tokens| Caption::new(tokens_line(tokens, cx))),
-                )
-                .children(
-                    reading
-                        .limits_at
-                        .map(|at| age(now, at, reading.plan.as_deref(), cx)),
-                ),
+            Some(shown) => codex
+                .children(meters("codex", shown.limits, now, cx))
+                .child(age(now, shown, cx)),
         };
-        codex = codex.children(failure(&usage.codex.error));
+        codex = codex
+            .children(tokens.map(|tokens| Caption::new(tokens_line(tokens, cx))))
+            .children(
+                usage
+                    .codex_live
+                    .value
+                    .as_ref()
+                    .and_then(|live| live.credits.as_deref())
+                    .map(|credits| Caption::new(text(cx, "et.usage.credits", &[("n", credits)]))),
+            )
+            .children(trouble(usage.codex_live.trouble.as_ref(), now, cx))
+            .children(failure(&usage.codex.error));
         div()
             .id("usage-body")
             .size_full()
@@ -194,16 +208,16 @@ pub fn resets(reset: Reset, cx: &App) -> String {
     }
 }
 
-/// How old a reading is, muted past an hour, with the plan where one is named.
-fn age(now: i64, at: i64, plan: Option<&str>, cx: &App) -> Div {
-    let age = time::age(now, at);
+/// How old a reading is, muted past an hour, with its plan and where it came from.
+fn age(now: i64, shown: Shown, cx: &App) -> Div {
+    let age = time::age(now, shown.at);
     let words = match age {
         Age::Now => text(cx, "et.usage.age_now", &[]),
         Age::Minutes(n) => text(cx, "et.usage.age_minutes", &[("n", &n.to_string())]),
         Age::Hours(n) => text(cx, "et.usage.age_hours", &[("n", &n.to_string())]),
         Age::Days(n) => text(cx, "et.usage.age_days", &[("n", &n.to_string())]),
     };
-    let words = match plan {
+    let words = match shown.plan {
         Some(plan) => format!("{plan} · {words}"),
         None => words.to_string(),
     };
@@ -214,9 +228,32 @@ fn age(now: i64, at: i64, plan: Option<&str>, cx: &App) -> Div {
         theme.colors.fg
     };
     div()
+        .flex()
+        .gap_2()
         .text_size(theme.text_size(TextSize::Sm))
-        .text_color(color)
-        .child(words)
+        .child(div().text_color(color).child(words))
+        .child(
+            div()
+                .text_color(theme.colors.fg_muted)
+                .child(text(cx, shown.origin.key(), &[])),
+        )
+}
+
+/// Why the last fetch gave nothing, on one line.
+fn trouble(trouble: Option<&Trouble>, now: i64, cx: &App) -> Option<AnyElement> {
+    let words = match trouble? {
+        Trouble::Expired => text(cx, "et.usage.expired", &[]),
+        Trouble::NoToken => text(cx, "et.usage.no_token", &[]),
+        Trouble::NoCodex => text(cx, "et.usage.no_codex", &[]),
+        Trouble::Limited(until) => {
+            let minutes = ((until - now).max(0) + 59) / 60;
+            text(cx, "et.usage.limited", &[("n", &minutes.to_string())])
+        }
+        Trouble::Failed(why) => {
+            return Some(InlineMessage::new(Severity::Warning, why.clone()).into_any_element());
+        }
+    };
+    Some(Caption::new(words).into_any_element())
 }
 
 fn tokens_line(tokens: Tokens, cx: &App) -> SharedString {

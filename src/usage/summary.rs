@@ -37,20 +37,12 @@ pub fn line(sources: &[(&str, Option<&Limits>)], now: i64) -> Option<String> {
 /// The line, pressed to show the Usage tab; none while no source has a live window.
 pub fn element(cx: &App) -> Option<impl IntoElement> {
     let usage = Usage::entity(cx).read(cx);
-    let codex = SettingsStore::get(cx).codex_usage;
+    let file_on = SettingsStore::get(cx).codex_usage;
     let sources = [
-        (
-            "Claude",
-            usage.claude.value.as_ref().map(|found| &found.limits),
-        ),
+        ("Claude", usage.claude_shown().map(|shown| shown.limits)),
         (
             "Codex",
-            usage
-                .codex
-                .value
-                .as_ref()
-                .filter(|_| codex)
-                .map(|r| &r.limits),
+            usage.codex_shown(file_on).map(|shown| shown.limits),
         ),
     ];
     let line = line(&sources, time::now())?;

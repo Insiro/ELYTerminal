@@ -156,6 +156,10 @@ pub struct Settings {
     pub check_updates: bool,
     /// Codex's limits read from its session files.
     pub codex_usage: bool,
+    /// Claude's limits fetched from its OAuth usage API.
+    pub claude_api_usage: bool,
+    /// Codex's limits asked of `codex app-server`, else ChatGPT's page.
+    pub codex_live_usage: bool,
     /// The projects column ends with a line of usage.
     pub usage_summary: bool,
     pub show_sessions: bool,
@@ -225,6 +229,8 @@ impl Default for Settings {
             ely_left: 140.0,
             check_updates: true,
             codex_usage: true,
+            claude_api_usage: true,
+            codex_live_usage: true,
             usage_summary: true,
             show_sessions: true,
             drag_sessions: true,
