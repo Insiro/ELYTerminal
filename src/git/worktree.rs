@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context as _, bail};
 
@@ -87,6 +90,29 @@ pub fn worktrees(folder: &Path) -> anyhow::Result<Option<Vec<Worktree>>> {
         folder.display()
     );
     Ok(Some(found))
+}
+
+/// The worktree at `tree` holds changes or untracked files.
+pub fn worktree_dirty(tree: &Path) -> anyhow::Result<bool> {
+    let args = ["status", "--porcelain", "--untracked-files=normal"];
+    Ok(!run(tree, &args, &[])?.is_empty())
+}
+
+/// Removes the linked worktree `tree` through the repository at `main`, its changes too with `force`; its branch stays.
+pub fn remove_worktree(main: &Path, tree: &Path, force: bool) -> anyhow::Result<()> {
+    #[cfg(windows)]
+    let tree = &match super::wsl::split(tree) {
+        Some((_, inside)) => PathBuf::from(inside),
+        None => tree.to_path_buf(),
+    };
+    let mut args = vec![OsStr::new("worktree"), OsStr::new("remove")];
+    if force {
+        args.push(OsStr::new("--force"));
+    }
+    args.push(tree.as_os_str());
+    run(main, &args, &[])?;
+    log::info!("git: worktree {} removed, force {force}", tree.display());
+    Ok(())
 }
 
 /// Reads `git worktree list --porcelain` output, NUL-ended fields or lines; a bare entry is left out.

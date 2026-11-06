@@ -47,6 +47,7 @@ mod tabs;
 mod toggles;
 mod usage;
 mod widths;
+mod worktrees;
 
 use dialogs::Asking;
 pub use persist::Boot;

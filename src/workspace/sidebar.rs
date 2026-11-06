@@ -222,7 +222,16 @@ impl Workspace {
             if let Some(mark) = self.mark(&Row::Tree(home.clone()), now, cx) {
                 item = item.trailing(mark);
             }
-            let menu = menu::worktree(&workspace, home, tree.path, cx);
+            // git lists the main worktree first; only a linked one it lists may go.
+            let removable = match &project.trees {
+                Trees::Git(listed) => listed
+                    .iter()
+                    .skip(1)
+                    .any(|listed| listed.path == tree.path)
+                    .then(|| (id, tree.branch.clone())),
+                _ => None,
+            };
+            let menu = menu::worktree(&workspace, (home, tree.path), removable, cx);
             ContextMenu::new(gpui::ElementId::Name(format!("menu:{key}").into()), menu)
                 .pl_4()
                 .child(item)

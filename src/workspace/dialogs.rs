@@ -30,6 +30,7 @@ pub(super) enum Asking {
     CloseClaude {
         id: TabId,
     },
+    RemoveWorktree(super::worktrees::Removal),
 }
 
 impl Workspace {
@@ -119,6 +120,7 @@ impl Workspace {
         };
         let submit = cx.entity();
         Some(match self.asking.as_ref()? {
+            Asking::RemoveWorktree(removal) => self.removal_dialog(removal, closed, cx)?,
             Asking::RenameTab { id, field } => {
                 let id = *id;
                 PromptDialog::new(
