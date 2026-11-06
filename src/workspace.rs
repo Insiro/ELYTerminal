@@ -135,6 +135,9 @@ pub struct Workspace {
     /// The file Files previews under its tree, and the tree's share.
     preview: Option<Entity<Document>>,
     preview_share: f32,
+    /// The tab the right column shows, and the default tab last read from the settings.
+    tab: PanelTab,
+    seen_panel: PanelTab,
     /// The right column of each home left.
     panels: HashMap<Home, panels::Panel<panels::Shown>>,
     git: Entity<GitPanel>,
@@ -204,6 +207,8 @@ impl Workspace {
             preview: None,
             preview_share: preview::SHARE,
             panels: HashMap::new(),
+            tab: SettingsStore::get(cx).panel,
+            seen_panel: SettingsStore::get(cx).panel,
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),
@@ -216,13 +221,13 @@ impl Workspace {
             usage: usage::Shown::new(cx),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
-                this.sync_preview(window, cx);
-                let settings = SettingsStore::get(cx);
-                if !settings.files_menu || !settings.show_panel || settings.panel != PanelTab::Files
-                {
-                    this.folder_actions = false;
+                // A default changed elsewhere, as the usage line does, shows here.
+                let panel = SettingsStore::get(cx).panel;
+                if panel != this.seen_panel {
+                    this.seen_panel = panel;
+                    this.tab = panel;
                 }
-                cx.notify();
+                this.retab(window, cx);
             }),
             _acted: acted,
             _here: here,
@@ -289,7 +294,7 @@ impl Render for Workspace {
         self.background.fit(window);
         let now = Instant::now();
         self.tick(now, cx);
-        self.usage.follow(cx);
+        self.usage.follow(self.tab, cx);
         // A page lies over every dialog, so it waits while one asks.
         if let Some(doc) = self.current().and_then(Tab::doc) {
             let allowed = self.asking.is_none();
@@ -374,7 +379,7 @@ impl Render for Workspace {
             terminal = terminal.leading(left);
         }
         if settings.show_panel {
-            let tab = settings.panel;
+            let tab = self.tab;
             let switch = self.panel_tabs(cx);
             let quiet = self
                 .current()

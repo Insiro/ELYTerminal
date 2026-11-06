@@ -17,7 +17,7 @@ use gpui::{
 use super::{Workspace, tabs::body::doc_title};
 use crate::{
     docs::{Document, Place},
-    files::{Files, OpenTab, Preview},
+    files::{Files, OpenTab, Preview, Toggled},
     settings::{PanelTab, SettingsStore},
 };
 
@@ -35,6 +35,8 @@ impl Workspace {
             this.open_doc(path.clone(), window, cx)
         })
         .detach();
+        cx.subscribe(files, |this, _, _: &Toggled, cx| this.dirty(cx))
+            .detach();
     }
 
     /// Previews `path` under the tree, in place of what showed there.
@@ -46,6 +48,7 @@ impl Workspace {
         let doc = cx.new(|cx| Document::new(path, Place::Panel, visible, window, cx));
         self.follow_links(&doc, window, cx);
         self.preview = Some(doc);
+        self.dirty(cx);
         cx.notify();
     }
 
@@ -57,6 +60,7 @@ impl Workspace {
                 doc.read(cx).path().display()
             );
             self.files.update(cx, |files, cx| files.unchoose(cx));
+            self.dirty(cx);
             cx.notify();
         }
     }
@@ -64,7 +68,7 @@ impl Workspace {
     /// Whether the right column shows Files.
     fn preview_visible(&self, cx: &Context<Self>) -> bool {
         let settings = SettingsStore::get(cx);
-        settings.show_panel && settings.panel == PanelTab::Files
+        settings.show_panel && self.tab == PanelTab::Files
     }
 
     /// The preview polls only while the right column shows Files.

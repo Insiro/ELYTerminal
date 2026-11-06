@@ -16,16 +16,14 @@ use gpui::{
     SharedString, Styled, Task, Window,
 };
 
-use crate::{
-    sessions,
-    settings::{PanelTab, SettingsStore},
-};
+use crate::{sessions, settings::SettingsStore};
 
 mod kept;
 mod listing;
 mod marks;
 mod menu;
 
+pub use kept::Toggled;
 use listing::{Listing, badge, key, list};
 use marks::{Marked, mark_key, remark};
 
@@ -89,6 +87,8 @@ pub struct Files {
     chosen: Option<SharedString>,
     /// The trees of roots shown before.
     kept: kept::Trees,
+    /// Whether the right column shows Files, as the workspace says.
+    showing: bool,
 }
 
 impl EventEmitter<Here> for Files {}
@@ -114,6 +114,7 @@ impl Files {
             menu: None,
             chosen: None,
             kept: kept::Trees::default(),
+            showing: false,
         }
     }
 
@@ -155,9 +156,7 @@ impl Files {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
-        let settings = SettingsStore::get(cx);
-        let showing = settings.show_panel && settings.panel == PanelTab::Files;
-        if !showing {
+        if !self.showing {
             return;
         }
         if !self.busy {
@@ -196,6 +195,7 @@ impl Files {
         } else {
             self.open.remove(&folder);
         }
+        cx.emit(Toggled);
     }
 
     /// Shows `folder`, read afresh with its marks; a new folder starts a new tree, open as it was left.
@@ -214,6 +214,7 @@ impl Files {
                 open,
                 chosen,
                 kept,
+                showing: self.showing,
                 ..Self::new(folder.to_path_buf())
             };
         }
@@ -344,6 +345,7 @@ impl Files {
 
     /// The tree opened `folder`, unread so far.
     fn load(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+        cx.emit(Toggled);
         self.open.insert(folder);
         self.read(cx);
     }

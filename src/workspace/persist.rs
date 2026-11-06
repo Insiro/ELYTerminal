@@ -178,8 +178,9 @@ impl Workspace {
         self.dormant = dormant;
         self.seed_panels(panels, cx);
         // The home selected first is already selected, so `enter` passes it by.
-        if let Some(panel) = self.panels.remove(&self.selected) {
-            self.apply(panel, window, cx);
+        match self.panels.remove(&self.selected) {
+            Some(panel) => self.apply(panel, window, cx),
+            None => self.retab(window, cx),
         }
         let mut pending = None;
         if let Some(launch) = boot.launch {

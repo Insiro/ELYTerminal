@@ -43,7 +43,17 @@ impl Trees {
     }
 }
 
+/// The tree opened or closed a folder.
+pub struct Toggled;
+
+impl gpui::EventEmitter<Toggled> for Files {}
+
 impl Files {
+    /// The workspace says whether Files shows, so it polls only then.
+    pub fn set_showing(&mut self, showing: bool) {
+        self.showing = showing;
+    }
+
     /// The folders `root`'s tree shows open, below the root, shown or left.
     pub fn open_in(&self, root: &Path) -> Vec<PathBuf> {
         let open = if root == self.root {

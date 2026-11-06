@@ -5,36 +5,38 @@ use ely_gpui_component::{
     primitives::IconName,
     theme::ControlSize,
 };
-use gpui::{Context, Focusable, ParentElement, Styled, div};
+use gpui::{Context, Focusable, ParentElement, Styled, Window, div};
 
-use super::{Workspace, toggles::show_tab};
+use super::Workspace;
 use crate::settings::{PanelTab, SettingsStore};
 
 impl Workspace {
     pub(super) fn panel_tabs(&self, cx: &Context<Self>) -> SegmentedControl {
-        let chosen = match SettingsStore::get(cx).panel {
+        let chosen = match self.tab {
             PanelTab::Git => "git",
             PanelTab::Files => "files",
             PanelTab::Usage => "usage",
         };
-        let workspace = cx.entity();
+        let (workspace, shown) = (cx.entity(), cx.entity());
         SegmentedControl::new("panel-tab", chosen)
             .segment("git", text(cx, "et.panel.git", &[]), None)
             .segment("files", text(cx, "et.panel.files", &[]), None)
             .segment("usage", text(cx, "et.panel.usage", &[]), None)
             .size(ControlSize::Sm)
-            .on_change(|value, _, cx| show_tab(value, cx))
-            .on_context(move |value, _, _, cx| {
+            .on_change(move |value, window, cx| {
+                shown.update(cx, |this, cx| this.show_tab(value, window, cx))
+            })
+            .on_context(move |value, _, window, cx| {
                 if value == "files" && SettingsStore::get(cx).files_menu {
-                    workspace.update(cx, |this, cx| this.flip_folder_actions(cx));
+                    workspace.update(cx, |this, cx| this.flip_folder_actions(window, cx));
                 }
             })
     }
 
     /// Shows Files, then shows or hides its folder row.
-    fn flip_folder_actions(&mut self, cx: &mut Context<Self>) {
-        show_tab(&"files".into(), cx);
-        if SettingsStore::get(cx).panel != PanelTab::Files {
+    fn flip_folder_actions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_tab(&"files".into(), window, cx);
+        if self.tab != PanelTab::Files {
             return;
         }
         self.folder_actions = !self.folder_actions;
@@ -49,7 +51,7 @@ impl Workspace {
 
     pub(super) fn folder_actions(&self, cx: &Context<Self>) -> Collapsible {
         let settings = SettingsStore::get(cx);
-        let shown = self.folder_actions && settings.files_menu && settings.panel == PanelTab::Files;
+        let shown = self.folder_actions && settings.files_menu && self.tab == PanelTab::Files;
         let workspace = cx.entity();
         let choose = Button::new(
             "choose-session-folder",

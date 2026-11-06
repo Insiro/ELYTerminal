@@ -7,7 +7,7 @@ use std::{
 
 use gpui::{App, Context, Entity, Window};
 
-use super::{Workspace, toggles::set_tab};
+use super::Workspace;
 use crate::{
     docs::Document,
     projects::{Home, store::SavedPanel},
@@ -71,7 +71,7 @@ impl Workspace {
             doc.update(cx, |doc, cx| doc.set_visible(false, window, cx));
         }
         let left = Panel {
-            tab: SettingsStore::get(cx).panel,
+            tab: self.tab,
             preview: preview.map(Shown::Doc),
             share: self.preview_share,
         };
@@ -90,7 +90,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         log::debug!("app: the right column shows {:?} again", panel.tab);
-        set_tab(panel.tab, cx);
+        self.turn_tab(panel.tab, window, cx);
         self.preview_share = panel.share;
         match panel.preview {
             Some(Shown::Doc(doc)) => self.preview = Some(doc),
@@ -111,7 +111,7 @@ impl Workspace {
         };
         let current = (
             &self.selected,
-            SettingsStore::get(cx).panel,
+            self.tab,
             self.preview
                 .as_ref()
                 .map(|doc| doc.read(cx).path().to_path_buf()),
