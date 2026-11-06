@@ -103,6 +103,24 @@ impl Workspace {
         self.sync_preview(window, cx);
     }
 
+    /// Drops the right columns, and Files' kept trees, of the homes `gone` names, `roots` among the trees.
+    pub(super) fn forget_panels(
+        &mut self,
+        gone: impl Fn(&Home) -> bool,
+        mut roots: Vec<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        let homes = (self.panels.keys())
+            .chain(self.shown.keys())
+            .chain(self.dormant.keys())
+            .chain(self.tabs.iter().map(|tab| &tab.home));
+        roots.extend(homes.filter(|home| gone(home)).filter_map(tree_root));
+        self.panels.retain(|home, _| !gone(home));
+        self.files.update(cx, |files, _| {
+            files.forget(|root| roots.iter().any(|r| r == root))
+        });
+    }
+
     /// Each home's right column as `workspace.json` keeps it.
     pub(super) fn saved_panels(&self, cx: &App) -> Vec<SavedPanel> {
         let path = |shown: &Shown| match shown {

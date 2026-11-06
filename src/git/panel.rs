@@ -340,11 +340,7 @@ impl GitPanel {
         let Discarding {
             changes, section, ..
         } = discarding;
-        let work = move |top: &Path| {
-            changes
-                .iter()
-                .try_for_each(|change| super::discard(top, change, section))
-        };
+        let work = move |top: &Path| super::discard_all(top, &changes, section);
         self.act("et.git.discard_failed", top, work, |_, _| {}, cx);
     }
 

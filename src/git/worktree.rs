@@ -92,14 +92,50 @@ pub fn worktrees(folder: &Path) -> anyhow::Result<Option<Vec<Worktree>>> {
     Ok(Some(found))
 }
 
-/// The worktree at `tree` holds changes or untracked files.
-pub fn worktree_dirty(tree: &Path) -> anyhow::Result<bool> {
-    let args = ["status", "--porcelain", "--untracked-files=normal"];
-    Ok(!run(tree, &args, &[])?.is_empty())
+/// What removing a worktree loses: changes or untracked files, which only `--force` passes, and ignored files, which go even without it.
+#[derive(Debug, Default, PartialEq)]
+pub struct Loss {
+    pub dirty: bool,
+    /// The ignored entries git names, a folder once with its trailing slash.
+    pub ignored: Vec<String>,
 }
 
-/// Removes the linked worktree `tree` through the repository at `main`, its changes too with `force`; its branch stays.
+/// What removing the worktree at `tree` loses.
+pub fn worktree_loss(tree: &Path) -> anyhow::Result<Loss> {
+    let args = [
+        "status",
+        "--porcelain",
+        "-z",
+        "--untracked-files=normal",
+        "--ignored",
+    ];
+    Ok(loss(&run(tree, &args, &[])?))
+}
+
+/// Reads `git status --porcelain -z --ignored`: `!!` entries are ignored, any other is a change.
+pub(crate) fn loss(bytes: &[u8]) -> Loss {
+    let mut found = Loss::default();
+    let mut fields = bytes.split(|&byte| byte == 0).filter(|f| !f.is_empty());
+    while let Some(field) = fields.next() {
+        let (code, path) = field.split_at(field.len().min(3));
+        if code == b"!! " {
+            found
+                .ignored
+                .push(String::from_utf8_lossy(path).into_owned());
+            continue;
+        }
+        found.dirty = true;
+        // A rename or copy carries its source in the next field.
+        if matches!(code.first(), Some(b'R' | b'C')) || matches!(code.get(1), Some(b'R' | b'C')) {
+            fields.next();
+        }
+    }
+    found
+}
+
+/// Removes the linked worktree `tree` through the repository at `main`, its changes too with `force`; its branch stays. A folder already gone is pruned when `remove` refuses it, as git before 2.29 does.
 pub fn remove_worktree(main: &Path, tree: &Path, force: bool) -> anyhow::Result<()> {
+    let gone = !tree.exists();
     #[cfg(windows)]
     let tree = &match super::wsl::split(tree) {
         Some((_, inside)) => PathBuf::from(inside),
@@ -110,8 +146,24 @@ pub fn remove_worktree(main: &Path, tree: &Path, force: bool) -> anyhow::Result<
         args.push(OsStr::new("--force"));
     }
     args.push(tree.as_os_str());
-    run(main, &args, &[])?;
-    log::info!("git: worktree {} removed, force {force}", tree.display());
+    match run(main, &args, &[]) {
+        Ok(_) => log::info!("git: worktree {} removed, force {force}", tree.display()),
+        Err(error) if gone => {
+            log::warn!("git: {error:#}; pruning the worktrees whose folders are gone");
+            run(main, &["worktree", "prune"], &[])?;
+            let left = worktrees(main)?.unwrap_or_default();
+            if let Some(kept) = left.iter().find(|worktree| worktree.path == tree) {
+                let why = if kept.locked {
+                    "it is locked"
+                } else {
+                    "git kept it"
+                };
+                bail!("git: worktree {} stays after prune: {why}", tree.display());
+            }
+            log::info!("git: worktree {} pruned", tree.display());
+        }
+        Err(error) => return Err(error),
+    }
     Ok(())
 }
 

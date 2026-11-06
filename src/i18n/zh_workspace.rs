@@ -10,7 +10,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.worktree.remove_detached", "git 将从磁盘删除 {path}。"),
     (
         "et.worktree.remove_tabs",
-        "其 {count} 个打开的标签页将关闭。",
+        "其 {count} 个打开的标签页将先关闭，其中的程序随之结束。",
     ),
     (
         "et.worktree.remove_dirty",
@@ -45,4 +45,17 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "保存的文件夹已不存在；标签页在其工作区的文件夹中打开",
     ),
     ("et.parked.resume_failed", "无法继续保存的标签页"),
+    (
+        "et.worktree.remove_missing",
+        "其文件夹 {path} 已不存在；git 将忘记该工作树。",
+    ),
+    (
+        "et.worktree.remove_ignored",
+        "{count} 个被忽略的条目（{names}）也会被删除，无论是否强制。",
+    ),
+    ("et.worktree.remove_forget", "忘记"),
+    (
+        "et.git.loss_under_new",
+        "其中 {count} 个文件未暂存的改动会丢失，其中 {new} 个新文件会被删除。",
+    ),
 ];

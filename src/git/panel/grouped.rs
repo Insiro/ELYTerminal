@@ -101,8 +101,12 @@ impl GitPanel {
                 self.act("et.git.unstage_failed", top, work, |_, _| {}, cx)
             }
             ChangeAction::Discard => {
+                let deleted = |change: &Change| {
+                    matches!(change.status, GitStatus::Added | GitStatus::Renamed)
+                };
                 let cost = match section {
                     ChangeSection::Untracked => "et.git.loss_folder",
+                    _ if changes.iter().any(deleted) => "et.git.loss_under_new",
                     _ => "et.git.loss_under",
                 };
                 let name = format!("{shown}/").into();

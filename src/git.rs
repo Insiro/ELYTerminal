@@ -6,12 +6,10 @@ use std::{
 };
 
 use anyhow::{Context as _, anyhow, bail, ensure};
-use ely_gpui_component::{
-    git::{ChangeSection, Commit},
-    lists::GitStatus,
-};
+use ely_gpui_component::{git::Commit, lists::GitStatus};
 
 mod diff;
+mod discard;
 mod graph;
 pub mod panel;
 mod worktree;
@@ -19,8 +17,9 @@ mod worktree;
 pub(crate) mod wsl;
 
 pub use diff::diff;
+pub use discard::{discard, discard_all};
 pub use graph::graph;
-pub use worktree::{Worktree, remove_worktree, worktree_dirty, worktrees};
+pub use worktree::{Loss, Worktree, remove_worktree, worktree_loss, worktrees};
 
 /// Git's arguments on one line, for messages.
 fn line<A: AsRef<OsStr>>(args: &[A]) -> String {
@@ -419,43 +418,6 @@ pub fn commit(top: &Path, message: &str, amend: bool) -> anyhow::Result<()> {
     run(top, args, message.as_bytes())?;
     let amended = if amend { ", amending HEAD" } else { "" };
     log::info!("git: committed in {}{amended}", top.display());
-    Ok(())
-}
-
-/// Discards `change` from the work tree: an edit goes back to the index; a new file, untracked or only intended to be added, goes.
-pub fn discard(top: &Path, change: &Change, section: ChangeSection) -> anyhow::Result<()> {
-    let shown = change.path.display();
-    let one = || pathspecs(std::slice::from_ref(change));
-    match (section, change.status) {
-        (ChangeSection::Untracked, _) => {
-            let flags = ["clean", "-f", "-d", "--"].map(OsStr::new);
-            let args: Vec<&OsStr> = flags.into_iter().chain([change.path.as_os_str()]).collect();
-            // Git passes over a repository of its own without a word.
-            let removed = run(top, &args, &[])?;
-            ensure!(!removed.is_empty(), "git: clean removed nothing at {shown}");
-        }
-        (ChangeSection::Unstaged, GitStatus::Added | GitStatus::Renamed) => {
-            let args = [
-                "rm",
-                "-f",
-                "-q",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
-            ];
-            run(top, &args, &one()?)?;
-        }
-        (ChangeSection::Unstaged, _) => {
-            let args = [
-                "restore",
-                "--worktree",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
-            ];
-            run(top, &args, &one()?)?;
-        }
-        _ => bail!("git: {shown} has nothing to discard in {section:?}"),
-    }
-    log::info!("git: discarded {shown} in {}", top.display());
     Ok(())
 }
 

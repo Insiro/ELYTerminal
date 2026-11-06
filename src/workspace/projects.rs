@@ -354,11 +354,14 @@ impl Workspace {
         };
         let folder = self.projects[at].folder.clone();
         let inside = |home: &Home| matches!(home, Home::Tree { project, .. } if *project == folder);
-        if matches!(
-            &self.asking,
-            Some(Asking::RenameProject { id: asked, .. } | Asking::RemoveProject { id: asked })
-                if *asked == id
-        ) {
+        let asked = match &self.asking {
+            Some(Asking::RenameProject { id: asked, .. } | Asking::RemoveProject { id: asked }) => {
+                *asked == id
+            }
+            Some(Asking::RemoveWorktree(removal)) => removal.project == id,
+            _ => false,
+        };
+        if asked {
             self.asking = None;
         }
         if inside(&self.selected) {
@@ -373,6 +376,11 @@ impl Workspace {
         for tab in closing {
             self.close(tab, window, cx);
         }
+        let mut roots = vec![folder.clone()];
+        if let Trees::Git(trees) = &self.projects[at].trees {
+            roots.extend(trees.iter().map(|tree| tree.path.clone()));
+        }
+        self.forget_panels(inside, roots, cx);
         self.projects.remove(at);
         self.shown.retain(|home, _| !inside(home));
         self.dormant.retain(|home, _| !inside(home));

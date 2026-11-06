@@ -88,12 +88,12 @@ fn removes_a_clean_worktree_and_a_dirty_one_only_by_force_its_branch_kept() {
         prepare(&root, &["worktree", "add", "-q", "-b", branch, path]);
     };
     add("clean");
-    assert!(!worktree_dirty(&linked).unwrap());
+    assert_eq!(worktree_loss(&linked).unwrap(), Loss::default());
     remove_worktree(&root, &linked, false).unwrap();
     assert!(!linked.exists());
     add("dirty");
     write(&linked, "new.txt", "new");
-    assert!(worktree_dirty(&linked).unwrap());
+    assert!(worktree_loss(&linked).unwrap().dirty);
     let refused = remove_worktree(&root, &linked, false).unwrap_err();
     assert!(format!("{refused:#}").contains("untracked"), "{refused:#}");
     assert!(linked.exists());
@@ -119,4 +119,66 @@ fn a_locked_worktree_says_git_s_words() {
     let refused = remove_worktree(&root, &linked, true).unwrap_err();
     assert!(format!("{refused:#}").contains("locked"), "{refused:#}");
     prepare(&root, &["worktree", "remove", "-f", "-f", path]);
+}
+
+#[test]
+fn ignored_files_are_named_and_go_without_force() {
+    let root = repository("wt-ignored");
+    write(&root, ".gitignore", ".env\nbuild/\n");
+    commit(&root);
+    let linked = root.with_file_name(format!("wt-ignored-linked-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&linked);
+    let path = linked.to_str().unwrap();
+    prepare(&root, &["worktree", "add", "-q", "-b", "ign", path]);
+    write(&linked, ".env", "SECRET=1");
+    write(&linked, "build/out.o", "o");
+    let loss = worktree_loss(&linked).unwrap();
+    assert!(!loss.dirty, "ignored files are no changes");
+    assert_eq!(loss.ignored, vec![".env".to_string(), "build/".to_string()]);
+    remove_worktree(&root, &linked, false).unwrap();
+    assert!(!linked.exists(), "git deletes them without force");
+}
+
+#[test]
+fn a_worktree_whose_folder_is_gone_is_forgotten() {
+    let root = repository("wt-missing");
+    commit(&root);
+    let linked = root.with_file_name(format!("wt-missing-linked-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&linked);
+    let path = linked.to_str().unwrap();
+    prepare(&root, &["worktree", "add", "-q", "-b", "gone", path]);
+    let listed = worktrees(&root).unwrap().expect("a repository")[1]
+        .path
+        .clone();
+    fs::remove_dir_all(&linked).unwrap();
+    remove_worktree(&root, &listed, false).unwrap();
+    assert_eq!(worktrees(&root).unwrap().expect("a repository").len(), 1);
+    prepare(
+        &root,
+        &["worktree", "add", "-q", "--lock", "-b", "held", path],
+    );
+    fs::remove_dir_all(&linked).unwrap();
+    let refused = remove_worktree(&root, &listed, false).unwrap_err();
+    assert!(format!("{refused:#}").contains("locked"), "{refused:#}");
+    prepare(&root, &["worktree", "unlock", path]);
+    prepare(&root, &["worktree", "prune"]);
+}
+
+#[test]
+fn status_records_split_into_changes_and_ignored() {
+    let bytes = b"R  new.txt\0old.txt\0!! .env\0!! build/\0";
+    let found = crate::git::worktree::loss(bytes);
+    assert!(found.dirty);
+    assert_eq!(
+        found.ignored,
+        vec![".env".to_string(), "build/".to_string()]
+    );
+    assert_eq!(
+        crate::git::worktree::loss(b"!! x\0"),
+        Loss {
+            dirty: false,
+            ignored: vec!["x".into()]
+        }
+    );
+    assert_eq!(crate::git::worktree::loss(b""), Loss::default());
 }

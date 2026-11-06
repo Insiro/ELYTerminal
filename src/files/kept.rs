@@ -41,6 +41,13 @@ impl Trees {
     pub(super) fn get(&self, root: &Path) -> Option<&Kept> {
         self.0.get(root)
     }
+
+    /// Drops the trees whose root `gone` names; how many.
+    pub(super) fn forget(&mut self, gone: impl Fn(&Path) -> bool) -> usize {
+        let before = self.0.len();
+        self.0.retain(|root, _| !gone(root));
+        before - self.0.len()
+    }
 }
 
 /// The tree opened or closed a folder.
@@ -52,6 +59,14 @@ impl Files {
     /// The workspace says whether Files shows, so it polls only then.
     pub fn set_showing(&mut self, showing: bool) {
         self.showing = showing;
+    }
+
+    /// Forgets the trees left at roots `gone` names, whose homes went.
+    pub fn forget(&mut self, gone: impl Fn(&Path) -> bool) {
+        let dropped = self.kept.forget(gone);
+        if dropped > 0 {
+            log::debug!("files: {dropped} kept trees forgotten");
+        }
     }
 
     /// The folders `root`'s tree shows open, below the root, shown or left.

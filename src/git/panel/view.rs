@@ -187,7 +187,11 @@ impl GitPanel {
         let (close, confirm) = (cx.entity(), cx.entity());
         let title = text(cx, "et.git.discard_title", &[("path", &discarding.name)]);
         let count = discarding.changes.len().to_string();
-        let cost = text(cx, discarding.cost, &[("count", &count)]);
+        let new = (discarding.changes.iter())
+            .filter(|change| matches!(change.status, GitStatus::Added | GitStatus::Renamed))
+            .count()
+            .to_string();
+        let cost = text(cx, discarding.cost, &[("count", &count), ("new", &new)]);
         let dialog = ConfirmDialog::new("git-discard", title, cost, {
             move |_, cx| {
                 close.update(cx, |panel, cx| {

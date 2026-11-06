@@ -11,7 +11,10 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.worktree.remove_detached",
         "git removes {path} from disk.",
     ),
-    ("et.worktree.remove_tabs", "Its {count} open tabs close."),
+    (
+        "et.worktree.remove_tabs",
+        "Its {count} open tabs close first, their programs ended.",
+    ),
     (
         "et.worktree.remove_dirty",
         "It holds uncommitted changes or untracked files, which will be lost.",
@@ -45,4 +48,17 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "The saved folder is gone; the tab opened in its workspace's folder",
     ),
     ("et.parked.resume_failed", "Cannot resume the saved tab"),
+    (
+        "et.worktree.remove_missing",
+        "Its folder {path} is gone already; git forgets the worktree.",
+    ),
+    (
+        "et.worktree.remove_ignored",
+        "{count} ignored entries ({names}) are deleted too, force or not.",
+    ),
+    ("et.worktree.remove_forget", "Forget"),
+    (
+        "et.git.loss_under_new",
+        "The unstaged changes of its {count} files are lost; {new} new files among them are deleted.",
+    ),
 ];

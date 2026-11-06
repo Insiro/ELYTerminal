@@ -351,7 +351,7 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.git.loss_changes", "Its unstaged changes are lost."),
     (
         "et.git.loss_under",
-        "The unstaged changes of its {count} files are lost; new files are deleted.",
+        "The unstaged changes of its {count} files are lost.",
     ),
     ("et.git.as_tree", "View as tree"),
     ("et.git.as_list", "View as list"),
