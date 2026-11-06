@@ -8,7 +8,7 @@ use ely_gpui_component::{
     lists::ListItem,
     menus::ContextMenu,
     primitives::{Disclosure, Icon, IconName},
-    theme::ActiveTheme,
+    theme::{ActiveTheme, IconSize},
 };
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement,
@@ -98,7 +98,14 @@ impl Workspace {
         });
         let others = self.others_shown().then(|| {
             let mut row = ListItem::new("home-others", text(cx, "et.projects.others", &[]))
-                .leading(Icon::new(IconName::Terminal))
+                .leading(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(slot(None::<gpui::Div>, cx))
+                        .child(Icon::new(IconName::Terminal)),
+                )
                 .selected(self.selected == Home::Others)
                 .on_click(move |_, window, cx| {
                     workspace.update(cx, |this, cx| this.select_home(Home::Others, window, cx))
@@ -168,7 +175,7 @@ impl Workspace {
             .flex()
             .items_center()
             .gap_1()
-            .children(disclosure)
+            .child(slot(disclosure, cx))
             .child(match project.listing.error {
                 Some(_) => Icon::new(IconName::TriangleAlert).color(cx.theme().colors.warning),
                 None => Icon::new(IconName::Folder),
@@ -254,6 +261,12 @@ impl Workspace {
             .child(Collapsible::new(("project-trees", id as usize), project.open).children(rows))
             .into_any_element()
     }
+}
+
+/// The chevron's fixed room, so names line up whether a row has one or not.
+fn slot(chevron: Option<impl IntoElement>, cx: &Context<Workspace>) -> gpui::Div {
+    let width = cx.theme().icon_size(IconSize::Xs);
+    div().w(width).flex_none().children(chevron)
 }
 
 /// `trees`, then each of `more` whose folder it lacks.
