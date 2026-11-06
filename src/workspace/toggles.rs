@@ -4,7 +4,7 @@ use ely_gpui_component::{
     primitives::IconName,
     theme::ControlSize,
 };
-use gpui::{App, Context, Entity, SharedString};
+use gpui::{App, Context, Entity, SharedString, Window};
 
 use super::Workspace;
 use crate::settings::{PanelTab, Settings, SettingsStore};
@@ -27,20 +27,55 @@ impl Workspace {
     }
 }
 
-/// Shows Git or Files in the right column, as the settings keep it.
-pub(super) fn show_tab(value: &SharedString, cx: &mut App) {
-    let panel = match value.as_ref() {
-        "git" => PanelTab::Git,
-        "files" => PanelTab::Files,
-        "usage" => PanelTab::Usage,
-        other => unreachable!("app: no {other} tab"),
-    };
-    if SettingsStore::get(cx).panel == panel {
-        return;
+impl Workspace {
+    /// The user shows a tab: this home shows it, and the settings keep it for homes with none of their own.
+    pub(super) fn show_tab(
+        &mut self,
+        value: &SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let panel = match value.as_ref() {
+            "git" => PanelTab::Git,
+            "files" => PanelTab::Files,
+            "usage" => PanelTab::Usage,
+            other => unreachable!("app: no {other} tab"),
+        };
+        self.turn_tab(panel, window, cx);
+        if SettingsStore::get(cx).panel == panel {
+            return;
+        }
+        match SettingsStore::update(cx, |settings| settings.panel = panel) {
+            Ok(()) => self.seen_panel = panel,
+            Err(error) => log::error!("app: the default tab stays: {error:#}"),
+        }
     }
-    match SettingsStore::update(cx, |settings| settings.panel = panel) {
-        Ok(()) => log::info!("app: the right column shows {panel:?}"),
-        Err(error) => log::error!("app: the right column stays: {error:#}"),
+
+    /// The right column shows `panel`, in this window alone, unsaved but in `workspace.json`.
+    pub(super) fn turn_tab(
+        &mut self,
+        panel: PanelTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.tab != panel {
+            log::info!("app: the right column shows {panel:?}");
+            self.tab = panel;
+            self.dirty(cx);
+        }
+        self.retab(window, cx);
+    }
+
+    /// What hangs on the tab shown: the preview's and Files' polls, and Files' folder row.
+    pub(super) fn retab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let settings = SettingsStore::get(cx);
+        let files = settings.show_panel && self.tab == PanelTab::Files;
+        if !(files && settings.files_menu) {
+            self.folder_actions = false;
+        }
+        self.files.update(cx, |it, _| it.set_showing(files));
+        self.sync_preview(window, cx);
+        cx.notify();
     }
 }
 

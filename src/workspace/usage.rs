@@ -35,13 +35,13 @@ impl Shown {
     }
 
     /// Holds a watch for each part the settings show.
-    pub(super) fn follow(&mut self, cx: &App) {
+    pub(super) fn follow(&mut self, tab: PanelTab, cx: &App) {
         let settings = SettingsStore::get(cx);
         let summary = settings.show_sessions && settings.usage_summary;
         if summary != self.summary.is_some() {
             self.summary = summary.then(|| Usage::watch(cx));
         }
-        let shown = settings.show_panel && settings.panel == PanelTab::Usage;
+        let shown = settings.show_panel && tab == PanelTab::Usage;
         if shown != self.shown.is_some() {
             self.shown = shown.then(|| Usage::watch(cx));
         }

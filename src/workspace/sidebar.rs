@@ -41,6 +41,7 @@ impl Workspace {
                     tab.hide(window, cx);
                 }
                 log::info!("app: home {home:?} selected");
+                self.enter(&home, window, cx);
                 self.selected = home;
                 self.dirty(cx);
                 self.show_none(window, cx);

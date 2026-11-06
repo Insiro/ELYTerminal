@@ -10,6 +10,7 @@ use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
 use super::{Home, Worktree, claude};
+use crate::settings::PanelTab;
 
 const VERSION: u32 = 1;
 
@@ -20,6 +21,22 @@ pub struct State {
     pub selected: Home,
     pub projects: Vec<SavedProject>,
     pub others: SavedSpace,
+    /// Each home's right column, absent in files from before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub panels: Vec<SavedPanel>,
+}
+
+/// A home's right column: its tab, its preview, and the folders its tree showed open.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedPanel {
+    pub home: Home,
+    #[serde(default)]
+    pub tab: Option<PanelTab>,
+    #[serde(default)]
+    pub preview: Option<PathBuf>,
+    #[serde(default)]
+    pub open: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -88,6 +105,7 @@ impl State {
             selected: Home::Others,
             projects: Vec::new(),
             others: SavedSpace::default(),
+            panels: Vec::new(),
         }
     }
 
@@ -108,6 +126,15 @@ impl State {
             for tree in &project.spaces {
                 absolute(&tree.path)?;
                 check_tabs(&tree.tabs)?;
+            }
+        }
+        for panel in &self.panels {
+            if let Home::Tree { project, path } = &panel.home {
+                absolute(project)?;
+                absolute(path)?;
+            }
+            for path in panel.preview.iter().chain(&panel.open) {
+                absolute(path)?;
             }
         }
         check_tabs(&self.others.tabs)

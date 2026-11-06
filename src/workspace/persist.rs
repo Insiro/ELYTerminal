@@ -166,6 +166,8 @@ impl Workspace {
             Loaded::Fresh(state) | Loaded::Ok(state) => (state, None),
             Loaded::Corrupt { backup } => (State::empty(), Some(backup)),
         };
+        let mut state = state;
+        let panels = std::mem::take(&mut state.panels);
         let (projects, dormant, selected) = parts(state, &mut self.next_project);
         log::info!(
             "workspace: {} projects and {} homes of saved tabs restored",
@@ -174,6 +176,12 @@ impl Workspace {
         );
         self.projects = projects;
         self.dormant = dormant;
+        self.seed_panels(panels, cx);
+        // The home selected first is already selected, so `enter` passes it by.
+        match self.panels.remove(&self.selected) {
+            Some(panel) => self.apply(panel, window, cx),
+            None => self.retab(window, cx),
+        }
         let mut pending = None;
         if let Some(launch) = boot.launch {
             let home = self.home_for(&launch.cwd);
@@ -239,7 +247,9 @@ impl Workspace {
                 (tab.home.clone(), saved(&tab.body, cx), shown)
             })
             .collect();
-        state(&self.projects, live, &self.dormant, &self.selected)
+        let mut state = state(&self.projects, live, &self.dormant, &self.selected);
+        state.panels = self.saved_panels(cx);
+        state
     }
 
     /// Saves once changes rest, off the main thread.
