@@ -21,6 +21,7 @@ use crate::{
     settings::{PanelTab, SettingsStore},
 };
 
+mod kept;
 mod listing;
 mod marks;
 mod menu;
@@ -86,6 +87,8 @@ pub struct Files {
     menu: Option<MenuAsk>,
     /// The tree's chosen node.
     chosen: Option<SharedString>,
+    /// The trees of roots shown before.
+    kept: kept::Trees,
 }
 
 impl EventEmitter<Here> for Files {}
@@ -110,6 +113,7 @@ impl Files {
             polling: Task::ready(()),
             menu: None,
             chosen: None,
+            kept: kept::Trees::default(),
         }
     }
 
@@ -194,14 +198,22 @@ impl Files {
         }
     }
 
-    /// Shows `folder`, read afresh with its marks; a new folder starts a new tree.
+    /// Shows `folder`, read afresh with its marks; a new folder starts a new tree, open as it was left.
     pub fn show(&mut self, folder: &Path, cx: &mut Context<Self>) {
         if folder != self.root {
             log::info!("files: the tree shows {}", folder.display());
             let polling = std::mem::replace(&mut self.polling, Task::ready(()));
+            let mut kept = std::mem::take(&mut self.kept);
+            let left = std::mem::take(&mut self.open);
+            let chosen = self.chosen.take();
+            kept.leave(self.root.clone(), kept::Kept { open: left, chosen });
+            let kept::Kept { open, chosen } = kept.enter(folder);
             *self = Self {
                 generation: self.generation + 1,
                 polling,
+                open,
+                chosen,
+                kept,
                 ..Self::new(folder.to_path_buf())
             };
         }

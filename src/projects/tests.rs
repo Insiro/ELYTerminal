@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use super::{
     Home, Worktree, claude, home_of, normal,
-    store::{Loaded, SavedProject, SavedSpace, SavedTab, SavedTree, State, load, save},
+    store::{Loaded, SavedPanel, SavedProject, SavedSpace, SavedTab, SavedTree, State, load, save},
 };
 
 fn folder(name: &str) -> PathBuf {
@@ -47,6 +47,12 @@ fn state(claude: Option<&str>) -> State {
             }],
         }],
         others: SavedSpace::default(),
+        panels: vec![SavedPanel {
+            home: Home::Others,
+            tab: Some(crate::settings::PanelTab::Files),
+            preview: Some("/p/app/README.md".into()),
+            open: vec!["/p/app/src".into()],
+        }],
     }
 }
 
@@ -327,4 +333,25 @@ fn cmd_runs_the_prelude_then_claude_and_refuses_what_it_would_read_apart() {
             "{bad}"
         );
     }
+}
+
+#[test]
+fn a_file_from_before_panels_loads_with_none() {
+    let folder = folder("ws-no-panels");
+    let path = folder.join("workspace.json");
+    let mut old = state(None);
+    old.panels.clear();
+    save(&path, &old).expect("saves");
+    let text = fs::read_to_string(&path).expect("reads");
+    assert!(!text.contains("panels"), "no panels, no key: {text}");
+    assert_eq!(load(&path).expect("loads"), Loaded::Ok(old));
+    fs::remove_dir_all(folder).expect("cleanup");
+}
+
+#[test]
+fn a_relative_panel_path_is_corrupt() {
+    let mut bad = state(None);
+    bad.panels[0].open = vec!["src".into()];
+    let text = serde_json::to_string(&bad).expect("serializes");
+    corrupt("ws-panel-relative", &text);
 }

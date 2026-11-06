@@ -35,6 +35,7 @@ mod doctabs;
 mod events;
 mod folder;
 mod panel;
+mod panels;
 mod persist;
 mod preview;
 mod projects;
@@ -134,6 +135,8 @@ pub struct Workspace {
     /// The file Files previews under its tree, and the tree's share.
     preview: Option<Entity<Document>>,
     preview_share: f32,
+    /// The right column of each home left.
+    panels: HashMap<Home, panels::Panel<panels::Shown>>,
     git: Entity<GitPanel>,
     /// What the window shows of the desktop, and the blur behind it.
     background: Blur,
@@ -200,6 +203,7 @@ impl Workspace {
             files,
             preview: None,
             preview_share: preview::SHARE,
+            panels: HashMap::new(),
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),

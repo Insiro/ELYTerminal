@@ -97,9 +97,12 @@ impl Workspace {
         if let Some(hidden) = self.current().filter(|tab| tab.id != id) {
             hidden.hide(window, cx);
         }
+        let home = self.tabs[index].home.clone();
+        let turned = home != self.selected;
+        self.enter(&home, window, cx);
         let tab = &mut self.tabs[index];
-        self.selected = tab.home.clone();
-        self.shown.insert(tab.home.clone(), id);
+        self.selected = home.clone();
+        self.shown.insert(home.clone(), id);
         match &mut tab.body {
             Body::Term(session) => {
                 session.bell = false;
@@ -111,10 +114,13 @@ impl Workspace {
                 let folder = session.folder.clone();
                 self.follow(&folder, cx);
             }
-            // The panels keep their folder while a document shows.
+            // The panels keep their folder while a document shows, unless the home turned.
             Body::Doc(doc) => {
                 doc.update(cx, |doc, cx| doc.set_visible(true, window, cx));
                 window.focus(&doc.focus_handle(cx), cx);
+                if turned {
+                    self.follow_home(&home, cx);
+                }
             }
         }
         log::debug!("app: tab {} shown", id.0);
@@ -126,8 +132,15 @@ impl Workspace {
     /// Shows no tab: the workspace takes the keys, and the panels show the home's folder.
     pub(super) fn show_none(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
-        // A gone worktree's panels show its project, else the home folder.
-        let folder = match &self.selected {
+        self.follow_home(&self.selected.clone(), cx);
+        log::debug!("app: home {:?} shows no tab", self.selected);
+        self.retitle(window, cx);
+        cx.notify();
+    }
+
+    /// The panels show `home`'s folder; a gone worktree's shows its project, else the home folder.
+    fn follow_home(&mut self, home: &Home, cx: &mut Context<Self>) {
+        let folder = match home {
             Home::Tree { path, .. } if path.is_dir() => Some(path.clone()),
             Home::Tree { project, .. } if project.is_dir() => Some(project.clone()),
             _ => dirs::home_dir(),
@@ -136,9 +149,6 @@ impl Workspace {
             Some(folder) => self.follow(&folder, cx),
             None => log::error!("app: no home folder for the panels"),
         }
-        log::debug!("app: home {:?} shows no tab", self.selected);
-        self.retitle(window, cx);
-        cx.notify();
     }
 
     /// Closes tab `id`; its program hangs up, and its home shows a neighbor or nothing.

@@ -35,6 +35,11 @@ pub(super) fn show_tab(value: &SharedString, cx: &mut App) {
         "usage" => PanelTab::Usage,
         other => unreachable!("app: no {other} tab"),
     };
+    set_tab(panel, cx);
+}
+
+/// Shows `panel` in the right column, as the settings keep it.
+pub(super) fn set_tab(panel: PanelTab, cx: &mut App) {
     if SettingsStore::get(cx).panel == panel {
         return;
     }
