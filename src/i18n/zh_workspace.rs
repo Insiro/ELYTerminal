@@ -62,4 +62,5 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.git.loss_under_new",
         "其中 {count} 个文件未暂存的改动会丢失，其中 {new} 个新文件会被删除。",
     ),
+    ("et.appearance.panel_scale", "右侧栏大小"),
 ];

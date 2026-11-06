@@ -65,4 +65,5 @@ pub const MESSAGES: &[(&str, &str)] = &[
         "et.git.loss_under_new",
         "The unstaged changes of its {count} files are lost; {new} new files among them are deleted.",
     ),
+    ("et.appearance.panel_scale", "Right column size"),
 ];

@@ -105,6 +105,8 @@ pub struct Settings {
     pub interface_font: String,
     /// The interface's base text, in pixels.
     pub interface_size: u8,
+    /// The right column's scale, in percent of the interface's; 100 draws it as the rest.
+    pub panel_scale: u8,
     /// A program path; empty runs the login shell.
     pub shell: String,
     pub start_in: StartIn,
@@ -198,6 +200,7 @@ impl Default for Settings {
             language: Language::English,
             interface_font: String::new(),
             interface_size: 13,
+            panel_scale: 90,
             shell: String::new(),
             start_in: StartIn::Home,
             start_folder: String::new(),
@@ -251,6 +254,7 @@ impl Default for Settings {
 }
 
 pub const INTERFACE_SIZE: RangeInclusive<u8> = 12..=16;
+pub const PANEL_SCALE: RangeInclusive<u8> = 70..=100;
 pub const FONT_SIZE: RangeInclusive<f32> = 6.0..=72.0;
 pub const FONT_WEIGHT: RangeInclusive<f32> = 100.0..=900.0;
 pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
@@ -266,6 +270,7 @@ impl Settings {
     /// Every value inside its range, every theme built in; the error names the field.
     pub fn validate(&self) -> anyhow::Result<()> {
         within("interface_size", self.interface_size, &INTERFACE_SIZE)?;
+        within("panel_scale", self.panel_scale, &PANEL_SCALE)?;
         within("font_size", self.font_size, &FONT_SIZE)?;
         within("font_weight", self.font_weight, &FONT_WEIGHT)?;
         within("line_height", self.line_height, &LINE_HEIGHT)?;

@@ -8,11 +8,11 @@ use ely_gpui_component::{
 use gpui::{Context, ParentElement, SharedString, Styled, div, prelude::FluentBuilder};
 
 use super::super::{SettingsWindow, set};
-use crate::settings::{INTERFACE_SIZE, SettingsStore};
+use crate::settings::{INTERFACE_SIZE, PANEL_SCALE, SettingsStore};
 
 impl SettingsWindow {
-    /// The interface's family and size, as ely-mark sets them.
-    pub(super) fn interface_rows(&self, cx: &Context<Self>) -> [SettingsRow; 2] {
+    /// The interface's family and size, as ely-mark sets them, and the right column's scale.
+    pub(super) fn interface_rows(&self, cx: &Context<Self>) -> [SettingsRow; 3] {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
         let word = |key: &str| text(cx, key, &[]);
@@ -67,14 +67,31 @@ impl SettingsWindow {
                 |control, size| control.segment(size.to_string(), format!("{size} px"), None),
             )
             .size(ControlSize::Sm)
+            .on_change({
+                let this = this.clone();
+                move |key, _, cx| {
+                    let size: u8 = key.parse().expect("a size the control offers");
+                    let change = format!("interface_size is {size}");
+                    set(&this, change, cx, |settings| settings.interface_size = size);
+                }
+            });
+        let now = SharedString::from(settings.panel_scale.to_string());
+        let panel = PANEL_SCALE
+            .step_by(5)
+            .fold(
+                SegmentedControl::new("panel_scale", now),
+                |control, scale| control.segment(scale.to_string(), format!("{scale}%"), None),
+            )
+            .size(ControlSize::Sm)
             .on_change(move |key, _, cx| {
-                let size: u8 = key.parse().expect("a size the control offers");
-                let change = format!("interface_size is {size}");
-                set(&this, change, cx, |settings| settings.interface_size = size);
+                let scale: u8 = key.parse().expect("a scale the control offers");
+                let change = format!("panel_scale is {scale}");
+                set(&this, change, cx, |settings| settings.panel_scale = scale);
             });
         [
             SettingsRow::new(word("et.appearance.interface_font")).control(font),
             SettingsRow::new(word("et.appearance.interface_size")).control(size),
+            SettingsRow::new(word("et.appearance.panel_scale")).control(panel),
         ]
     }
 }

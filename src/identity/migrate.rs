@@ -12,13 +12,14 @@ use anyhow::Context as _;
 use super::{NAME, UPSTREAM};
 
 /// Settings keys only the fork knows, which upstream's `deny_unknown_fields` refuses.
-pub const FORK_KEYS: [&str; 6] = [
+pub const FORK_KEYS: [&str; 7] = [
     "claude_prelude",
     "codex_usage",
     "claude_api_usage",
     "codex_live_usage",
     "usage_summary",
     "git_tree",
+    "panel_scale",
 ];
 
 /// The file the fork's folder holds once a copy finished whole.

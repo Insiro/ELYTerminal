@@ -392,3 +392,20 @@ fn claude_s_prelude_is_one_line_of_plain_text() {
         assert!(error.contains("claude_prelude"), "{error}");
     }
 }
+
+#[test]
+fn the_right_column_draws_at_90_percent_unless_set() {
+    let settings: Settings = serde_json::from_str("{}").expect("every field has a default");
+    assert_eq!(settings.panel_scale, 90);
+    for scale in [69, 101] {
+        let settings = Settings {
+            panel_scale: scale,
+            ..Settings::default()
+        };
+        let error = settings.validate().expect_err("outside 70 to 100");
+        assert_eq!(
+            error.to_string(),
+            format!("panel_scale is {scale}, outside 70 to 100")
+        );
+    }
+}
