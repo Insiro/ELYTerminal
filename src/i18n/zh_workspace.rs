@@ -55,6 +55,10 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ),
     ("et.worktree.remove_forget", "忘记"),
     (
+        "et.parked.claude_folder_gone",
+        "保存的文件夹已不存在，因此 Claude 的对话未能恢复；已在其工作区文件夹中打开 shell",
+    ),
+    (
         "et.git.loss_under_new",
         "其中 {count} 个文件未暂存的改动会丢失，其中 {new} 个新文件会被删除。",
     ),

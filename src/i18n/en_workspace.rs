@@ -58,6 +58,10 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ),
     ("et.worktree.remove_forget", "Forget"),
     (
+        "et.parked.claude_folder_gone",
+        "The saved folder is gone, so Claude's conversation did not resume; a shell opened in its workspace's folder",
+    ),
+    (
         "et.git.loss_under_new",
         "The unstaged changes of its {count} files are lost; {new} new files among them are deleted.",
     ),

@@ -56,6 +56,11 @@ fn a_shell_resumes_in_its_folder_else_its_home_s() {
 fn claude_resumes_by_its_id() {
     let plan = resume(&parked(Some(ID)), |_| true);
     assert_eq!(plan.claude, Some((ID.to_string(), Mode::Resume)));
+    let moved = resume(&parked(Some(ID)), |path: &Path| path == Path::new("/p/wt"));
+    assert!(
+        moved.moved && moved.claude.is_none(),
+        "Claude ties its id to the folder"
+    );
     assert_eq!(
         crate::projects::claude::env(ID, Mode::Resume),
         format!("resume:{ID}")
@@ -72,4 +77,24 @@ fn only_absolute_utf8_folders_are_kept() {
         let bad = Path::new(std::ffi::OsStr::from_bytes(b"/a\xff"));
         assert_eq!(keepable(bad), None);
     }
+}
+
+#[test]
+fn past_fifty_the_oldest_go() {
+    let mut kept: Vec<Parked> = (0..KEPT as u64 + 3)
+        .map(|at| Parked {
+            saved: 1_000 + (at * 7) % 53,
+            name: format!("t{at}"),
+            ..parked(None)
+        })
+        .collect();
+    let oldest: Vec<u64> = {
+        let mut saved: Vec<u64> = kept.iter().map(|p| p.saved).collect();
+        saved.sort();
+        saved[..3].to_vec()
+    };
+    assert_eq!(cap(&mut kept), 3);
+    assert_eq!(kept.len(), KEPT);
+    assert!(kept.iter().all(|p| !oldest.contains(&p.saved)));
+    assert_eq!(cap(&mut kept), 0);
 }

@@ -171,6 +171,7 @@ impl Workspace {
         let parked = std::mem::take(&mut state.parked);
         let (projects, dormant, selected) = parts(state, &mut self.next_project);
         self.parked = parked;
+        super::parked::cap(&mut self.parked);
         self.drop_parked(|home| match home {
             Home::Tree { project, .. } => !projects.iter().any(|kept| kept.folder == *project),
             Home::Others => false,

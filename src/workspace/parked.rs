@@ -14,6 +14,23 @@ use crate::{
 
 mod view;
 
+/// The most tabs kept for later; past it the oldest go.
+pub(super) const KEPT: usize = 50;
+
+/// Drops the oldest of `parked` past `KEPT`; how many went.
+pub(super) fn cap(parked: &mut Vec<Parked>) -> usize {
+    let mut dropped = 0;
+    while parked.len() > KEPT {
+        let oldest = (0..parked.len())
+            .min_by_key(|at| parked[*at].saved)
+            .expect("a saved tab past the cap");
+        let gone = parked.remove(oldest);
+        log::info!("app: saved tab {:?} goes, past {KEPT} kept", gone.name);
+        dropped += 1;
+    }
+    dropped
+}
+
 /// `path` when `workspace.json` can keep it: absolute and UTF-8.
 fn keepable(path: &Path) -> Option<PathBuf> {
     (path.is_absolute() && path.to_str().is_some()).then(|| path.to_path_buf())
@@ -35,7 +52,7 @@ pub(super) fn record(home: Home, session: &Session, screen: String, saved: u64) 
     }
 }
 
-/// Where a resume starts and how: its folder, else its home's when `is_dir` finds it gone, which then says so; none is home. Claude resumes by its id.
+/// Where a resume starts and how: its folder, else its home's when `is_dir` finds it gone, which then says so; none is home. Claude resumes by its id only in its own folder, since Claude ties a conversation to it.
 #[derive(Debug, PartialEq)]
 pub(super) struct Resume {
     pub folder: Option<PathBuf>,
@@ -53,7 +70,9 @@ pub(super) fn resume(parked: &Parked, is_dir: impl Fn(&Path) -> bool) -> Resume 
         Some(_) => (home, true),
         None => (None, false),
     };
-    let claude = parked.claude.clone().map(|id| (id, Mode::Resume));
+    let claude = (parked.claude.clone())
+        .filter(|_| !moved)
+        .map(|id| (id, Mode::Resume));
     Resume {
         folder,
         moved,
@@ -94,6 +113,7 @@ impl Workspace {
             parked.screen.len()
         );
         self.parked.push(parked);
+        cap(&mut self.parked);
         self.close(id, window, cx);
         self.dirty(cx);
     }
@@ -123,8 +143,17 @@ impl Workspace {
                 cx.notify();
                 if plan.moved {
                     let gone = parked.folder.as_deref().unwrap_or(Path::new(""));
-                    let error = anyhow::anyhow!("{} is gone", gone.display());
-                    notice("et.parked.folder_gone", error, window, cx);
+                    let gone = gone.display();
+                    match &parked.claude {
+                        Some(id) => {
+                            let error = anyhow::anyhow!("{gone} is gone; Claude conversation {id}");
+                            notice("et.parked.claude_folder_gone", error, window, cx)
+                        }
+                        None => {
+                            let error = anyhow::anyhow!("{gone} is gone");
+                            notice("et.parked.folder_gone", error, window, cx)
+                        }
+                    }
                 }
             }
             Err(error) => notice("et.parked.resume_failed", error, window, cx),
