@@ -1,3 +1,4 @@
+mod picture;
 mod profiles;
 mod store;
 pub mod window;
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::themes;
 
+pub use picture::{PictureAxis, PictureLength, PicturePosition, PictureRepeat, PictureSize};
 pub use profiles::{Profile, command_line, words};
 pub use store::{SettingsStore, load, save};
 
@@ -96,6 +98,15 @@ pub enum PanelTab {
     Usage,
 }
 
+/// Where the background picture paints: the terminal's column or the window below the title bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundScope {
+    #[default]
+    Terminal,
+    Window,
+}
+
 /// Everything the settings window edits. A field the file leaves out takes its default.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -123,6 +134,14 @@ pub struct Settings {
     pub custom_themes: Vec<themes::CustomTheme>,
     /// A picture under the terminal; empty for none.
     pub background_image: String,
+    /// Where the picture paints: the terminal's column or the window below the title bar.
+    pub background_scope: BackgroundScope,
+    /// How the picture fills its box, as CSS's `background-size`.
+    pub background_size: PictureSize,
+    /// Where the picture sits in its box, as CSS's `background-position`.
+    pub background_position: PicturePosition,
+    /// Whether the picture tiles to fill its box.
+    pub background_repeat: PictureRepeat,
     pub font_family: String,
     /// Families tried in order for a character Font family lacks.
     pub font_fallbacks: Vec<String>,
@@ -150,6 +169,8 @@ pub struct Settings {
     /// Option and Command edit text by word and line, as macOS's text does.
     pub natural_text_editing: bool,
     pub copy_on_select: bool,
+    /// A right press copies a selection, else pastes, as Windows Terminal does.
+    pub right_click_paste: bool,
     /// Ely peeks over the main window's top edge.
     pub ely: bool,
     /// How far in from the pane's left edge she stands, in points, as a drag left her.
@@ -210,6 +231,10 @@ impl Default for Settings {
             dark_theme: None,
             custom_themes: Vec::new(),
             background_image: String::new(),
+            background_scope: BackgroundScope::Terminal,
+            background_size: PictureSize::Cover,
+            background_position: PicturePosition::default(),
+            background_repeat: PictureRepeat::NoRepeat,
             font_family: "JetBrains Mono".into(),
             font_fallbacks: Vec::new(),
             cjk_font: String::new(),
@@ -230,6 +255,7 @@ impl Default for Settings {
             option_as_alt: OptionAsAlt::Off,
             natural_text_editing: false,
             copy_on_select: false,
+            right_click_paste: cfg!(windows),
             ely: true,
             ely_left: 140.0,
             check_updates: true,
@@ -258,7 +284,7 @@ pub const PANEL_SCALE: RangeInclusive<u8> = 70..=100;
 pub const FONT_SIZE: RangeInclusive<f32> = 6.0..=72.0;
 pub const FONT_WEIGHT: RangeInclusive<f32> = 100.0..=900.0;
 pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
-pub const OPACITY: RangeInclusive<f32> = 0.3..=1.0;
+pub const OPACITY: RangeInclusive<f32> = 0.0..=1.0;
 pub const PADDING: RangeInclusive<f32> = 0.0..=64.0;
 pub const SCROLLBACK: RangeInclusive<u32> = 0..=100_000;
 pub const COLUMN: RangeInclusive<f32> = 160.0..=960.0;

@@ -9,6 +9,9 @@
 - 速度：颜色很多的行绘制快了约三倍，纯文本输出到屏幕快了约 30%，kitty 图形数据用 SIMD 解码。
 - 终端右缘的滚动条滚动历史，即使程序占用了滚轮。
 - 各系统上的图片工具都能按正确尺寸显示图片：终端回答以像素计的单元格尺寸 CSI 16 t，Windows 上的 yazi 会询问它。
+- Windows 上，程序跟踪鼠标时，滚轮每格发送一次鼠标上报；终端自身的历史仍按系统设置的行数滚动。高精度滚轮的分段输入累积后上报，Shift 保持原有的本地滚动行为。
+- Windows 上，剪贴板没有文本时，仍向开启括号粘贴的程序发送空粘贴通知，让 OpenCode 等应用自行读取剪贴板中的图片。
+- Windows 上，打字时鼠标指针在窗口上隐藏，直到鼠标移动，与 Windows Terminal 相同；不再随每次按键闪回。
 - zsh、bash、fish 和 PowerShell 的 shell 集成，在 Windows 上也包括 Git for Windows 的 bash 和 `sh`，以及 Shell 为 `wsl` 时启动的 bash、zsh 或 fish，所以文件和 Git 能跟上 WSL 或 Git Bash 会话：每个提示符报告其文件夹和标题，OSC 133 标记每个提示符、每条命令及其退出状态。在 Windows 上，当前盘没有这一路径时，PowerShell 的 `cd` 也接受 Git Bash 的盘符路径：`cd /e` 进入 `E:\`，`cd /c/Users` 进入 `C:\Users`。在 Wayland 上，fcitx5 等输入法转发修饰键却不带合成器的修饰状态时，Shift 和 Ctrl+Shift 快捷键照常工作。 窗口缩放时 zsh 重画的提示符不再在历史里留下副本。cmd 会话，或在 PowerShell 提示符下输入的 `cmd`，会标记提示符并报告文件夹；命令一开始就清掉上一条命令的失败，所以 ssh 或嵌套 shell 运行时，会话行和 Ely 保持平静。
 - Ely 从窗口上缘探出头，窗口上方没有她的位置时则从左下角探上来，并且一直在动：呼吸、摇摆、眨眼。她跟着会话走：程序等你时她跳，出错时她抖，完成时她欢呼，程序工作时她顺着读，长久平静时她打盹。点按她，她眨眼，并把她从盹里叫醒。沿边缘拖动可挪她。设置 › 终端 › Ely 关掉她。
 - 会话：新建、关闭和切换。右键点按一行可复制它，用它正在跑的 shell 和它上次报告的文件夹，或关闭它；拖动一行可换位置；设置 › 终端 可分别关掉这两项。+ 旁的箭头打开配置文件，与 Windows Terminal 相同：先是你自己的，每个有名称、带参数的命令行和文件夹，在 设置 › 终端 › 配置文件 里设定；再是本机找到的 shell，Windows 上是 PowerShell、cmd、Git Bash 和每个 WSL 发行版（Docker Desktop 自带的除外），其他系统是 `/etc/shells` 列出的每个 shell。只写程序、或写 `wsl -d 名称` 的配置文件保留 shell 集成；其他参数照原样运行，这个会话不报告文件夹。响铃给隐藏会话的行做标记，不发声。一行的标记显示其程序通过 OSC 7501、OSC 9;4 或 herdr 报告的内容：等你、错误、带进度的工作、完成或空闲，否则是上一条失败的命令。标记是 3×3 的点：工作时涟漪，等待时下沉，持续到该状态结束。悬停在标记上列出每条报告。
@@ -23,4 +26,5 @@
 - 设置 › 外观 中的终端字体：字体系列、后备字体、中日韩字体（中文、日文和韩文字符先用它绘制）、大小、100 到 900 的字重（粗体比它重 300，最高 900）、行高和连字。Windows 和 Linux 上可选抗锯齿：默认灰度，与 Windows Terminal 相同；次像素只在窗口不透明时生效。光标平滑移动到新的格子；设置 › 外观 › 光标 › 平滑移动 可关掉。
 - 设置 › 外观 中的界面字体和字号：任一已安装字体，附示例行，12 到 16 px，作用于每个窗口的界面；终端保留自己的字体。
 - Windows 上，设置 › 终端 › 资源管理器菜单 可为当前用户在文件夹的右键菜单中加入或移除“在 ELYTerminal 中打开”；Windows 11 中它位于“显示更多选项”下。`elyterminal FOLDER` 在各系统上都让第一个会话从 FOLDER 开始；cmd 不接受网络共享作为当前目录，会自行提示并进入 Windows 目录。文件夹也可以写在 `--working-directory`、`-d` 或 `--startingDirectory` 之后，与 xdg-terminal-exec 和 Windows Terminal 的写法相同。
-- 背景不透明度和模糊：macOS 上是 NSVisualEffectView，Windows 上是 acrylic，Windows 11 build 22621 起可按设置 › 外观 › 背景材质选云母或云母 Alt，Wayland 上是 `ext_background_effect_v1` 或 `org_kde_kwin_blur`，X11 上是 `_KDE_NET_WM_BLUR_BEHIND_REGION`，KWin 会读它。模糊只在不透明度低于 100% 时出现。Hyprland 只在自己的 `decoration:blur:enabled` 打开时模糊，而 Omarchy 4.0.4 把它关掉了；要在那里打开，把 `hl.config({ decoration = { blur = { enabled = true } } })` 加到 `~/.config/hypr/looknfeel.lua`。
+- 背景不透明度和模糊：macOS 上是 NSVisualEffectView，Windows 上是 acrylic，Windows 11 build 22621 起可按设置 › 外观 › 背景材质选云母或云母 Alt，Wayland 上是 `ext_background_effect_v1` 或 `org_kde_kwin_blur`，X11 上是 `_KDE_NET_WM_BLUR_BEHIND_REGION`，KWin 会读它。不透明度从 0% 到 100%，模糊只在低于 100% 时出现。Hyprland 只在自己的 `decoration:blur:enabled` 打开时模糊，而 Omarchy 4.0.4 把它关掉了；要在那里打开，把 `hl.config({ decoration = { blur = { enabled = true } } })` 加到 `~/.config/hypr/looknfeel.lua`。
+- 背景图片：在设置 › 外观 › 背景图片 选一张图，按背景不透明度显示，位置由 图片范围 决定：终端列下方，或标题栏以下的整个窗口。列头可能让终端比宽度设置更宽，图片跟着终端本身。图片保持原色：设置图片时各列的玻璃为 0，整窗图片会从列中透出。尺寸、位置和重复与 CSS 相同：`cover`、`contain`、`fill`、`auto`，或宽高如 `51% auto`；位置如 `right top` 或 `125% 100%`；重复可选不重复、横向、纵向或两者，`settings.json` 里写作 `no_repeat`、`repeat_x`、`repeat_y` 和 `repeat`。图片不会超出它的区域。

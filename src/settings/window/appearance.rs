@@ -8,7 +8,7 @@ use std::ops::RangeInclusive;
 
 use ely_gpui_component::{
     buttons::{Button, ButtonVariant, IconButton},
-    forms::{FontPicker, NumberInput, PathInput, Slider, Switch, TextInput},
+    forms::{FontPicker, NumberInput, Slider, Switch, TextInput},
     i18n::text,
     primitives::IconName,
     settings::{SettingsRow, SettingsSection},
@@ -19,10 +19,7 @@ use gpui::{
 };
 
 use self::cards::grid;
-use super::{
-    SettingsWindow, choice, set, switch,
-    terminal::{chosen, path_field},
-};
+use super::{SettingsWindow, choice, set, switch};
 use crate::{
     blur,
     settings::{
@@ -185,17 +182,13 @@ impl SettingsWindow {
                     .text_size(theme.text_size(TextSize::Sm))
                     .child(format!("{opacity}%")),
             );
-        let image = PathInput::new("settings-background-image", &self.image)
-            .on_choose(chosen(&this, "background_image"));
-        let image = path_field(image, self.refused_image.clone(), cx);
         let mut background = SettingsSection::new(word("et.appearance.window"))
-            .row(SettingsRow::new(word("et.appearance.opacity")).control(opacity))
-            .row(
-                SettingsRow::new(word("et.appearance.image"))
-                    .description(word("et.appearance.image_hint"))
-                    .control(image),
-            )
-            .row(SettingsRow::new(word("et.appearance.blur")).control(switch(
+            .row(SettingsRow::new(word("et.appearance.opacity")).control(opacity));
+        for row in self.picture.rows(&this, settings, cx) {
+            background = background.row(row);
+        }
+        let mut background =
+            background.row(SettingsRow::new(word("et.appearance.blur")).control(switch(
                 &this,
                 "background_blur",
                 settings.background_blur,
@@ -423,8 +416,8 @@ mod tests {
     #[test]
     fn each_percent_saves_as_its_own_short_fraction() {
         let (low, high) = (percent(*OPACITY.start()), percent(*OPACITY.end()));
-        assert_eq!((low, high), (30., 100.));
-        for whole in 30..=100 {
+        assert_eq!((low, high), (0., 100.));
+        for whole in 0..=100 {
             let saved = fraction(f64::from(whole));
             assert_eq!(percent(saved), f64::from(whole));
             let text = serde_json::to_string(&saved).expect("a number");

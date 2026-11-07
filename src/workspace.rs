@@ -7,7 +7,7 @@ use std::{
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     i18n::text,
-    primitives::{FocusScope, IconName},
+    primitives::IconName,
     shell::{ColumnShell, ResizeBorder, ShellColumn},
     theme::ControlSize,
     typography::Caption,
@@ -47,6 +47,7 @@ mod strip;
 mod tabs;
 mod toggles;
 mod usage;
+mod wallpaper;
 mod widths;
 mod worktrees;
 
@@ -305,7 +306,7 @@ impl Render for Workspace {
             let allowed = self.asking.is_none();
             doc.update(cx, |doc, cx| doc.allow_web(allowed, cx));
         }
-        let settings = SettingsStore::get(cx);
+        let settings = SettingsStore::get(cx).clone();
         let workspace = cx.entity();
         // It leads the first column or ends the last.
         let left = column_toggle(
@@ -356,7 +357,7 @@ impl Render for Workspace {
         let mut terminal = ShellColumn::new("terminal")
             .title(self.title(cx))
             .child(self.tab_strip(cx))
-            .child(div().flex_1().min_h_0().child(body));
+            .child(wallpaper::body(body));
         if settings.show_sessions {
             let added = workspace.clone();
             let add = IconButton::new("add-project", IconName::FolderPlus)
@@ -429,6 +430,7 @@ impl Render for Workspace {
         } else {
             shell = shell.column(terminal.action(end));
         }
+        let ground = wallpaper::under(&self.focus, shell, &settings, window, cx);
         // The context sits above the focus root, so its keys work wherever focus is.
         crate::interface::dress(div(), cx)
             .size_full()
@@ -491,7 +493,7 @@ impl Render for Workspace {
             .child(
                 ResizeBorder::new()
                     .when(self.background.see_through(), ResizeBorder::glass)
-                    .child(FocusScope::new(&self.focus).root().size_full().child(shell)),
+                    .child(ground),
             )
             .children(self.dialog(cx))
     }

@@ -13,10 +13,11 @@
 | 会话栏 | Cmd-B | Ctrl-Shift-B |
 | 右侧栏 | Cmd-Alt-B | Ctrl-Shift-Alt-B |
 | 拷贝、粘贴 | Cmd-C、Cmd-V | Ctrl-Shift-C、Ctrl-Shift-V；在 Windows 上 Ctrl-V 也粘贴 |
+| 拷贝选中文字，没有选中时粘贴 | 右键，需打开设置 › 终端 › 右键粘贴 | 右键，需打开同一开关；Windows 上默认打开 |
 | 全选 | Cmd-A | Ctrl-Shift-A |
 | 查找 | Cmd-F | Ctrl-Shift-F |
 | 放大、缩小、重置大小 | Cmd-=、Cmd-minus、Cmd-0 | Ctrl-=、Ctrl-minus、Ctrl-0 |
-| 打开链接 | Cmd-点按 | Ctrl-点按 |
+| 打开链接（指针在上面时显示下划线） | Cmd-点按 | Ctrl-点按 |
 | 设置 | Cmd-, | Ctrl-, |
 | 最小化 | Cmd-M | |
 | 退出 | Cmd-Q | Ctrl-Shift-Q |
