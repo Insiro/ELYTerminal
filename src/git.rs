@@ -6,17 +6,18 @@ use std::{
 };
 
 use anyhow::{Context as _, anyhow, bail, ensure};
-use ely_gpui_component::{
-    git::{ChangeSection, Commit},
-    lists::GitStatus,
-};
+use ely_gpui_component::{git::Commit, lists::GitStatus};
 
 mod diff;
+mod discard;
+mod graph;
 pub mod panel;
 #[cfg(any(windows, test))]
 pub(crate) mod wsl;
 
 pub use diff::diff;
+pub use discard::discard;
+pub use graph::graph;
 
 /// Git's arguments on one line, for messages.
 fn line<A: AsRef<OsStr>>(args: &[A]) -> String {
@@ -417,48 +418,18 @@ pub fn commit(top: &Path, message: &str, amend: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Discards `change` from the work tree: an edit goes back to the index; a new file, untracked or only intended to be added, goes.
-pub fn discard(top: &Path, change: &Change, section: ChangeSection) -> anyhow::Result<()> {
-    let shown = change.path.display();
-    let one = || pathspecs(std::slice::from_ref(change));
-    match (section, change.status) {
-        (ChangeSection::Untracked, _) => {
-            let flags = ["clean", "-f", "-d", "--"].map(OsStr::new);
-            let args: Vec<&OsStr> = flags.into_iter().chain([change.path.as_os_str()]).collect();
-            // Git passes over a repository of its own without a word.
-            let removed = run(top, &args, &[])?;
-            ensure!(!removed.is_empty(), "git: clean removed nothing at {shown}");
-        }
-        (ChangeSection::Unstaged, GitStatus::Added | GitStatus::Renamed) => {
-            let args = [
-                "rm",
-                "-f",
-                "-q",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
-            ];
-            run(top, &args, &one()?)?;
-        }
-        (ChangeSection::Unstaged, _) => {
-            let args = [
-                "restore",
-                "--worktree",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
-            ];
-            run(top, &args, &one()?)?;
-        }
-        _ => bail!("git: {shown} has nothing to discard in {section:?}"),
-    }
-    log::info!("git: discarded {shown} in {}", top.display());
-    Ok(())
-}
-
-/// The newest `count` commits from HEAD, which must have one.
+/// The newest `count` commits from HEAD, which must have one, each before its parents, as the graph needs.
 pub fn log(top: &Path, count: usize) -> anyhow::Result<Vec<Commit>> {
     let count = format!("-n{count}");
     let format = "--format=%H%x00%P%x00%s%x00%an%x00%ar%x00%D";
-    let args = ["log", &count, "-z", "--no-show-signature", format];
+    let args = [
+        "log",
+        &count,
+        "-z",
+        "--topo-order",
+        "--no-show-signature",
+        format,
+    ];
     let out = run(top, &args, &[])?;
     let out = String::from_utf8_lossy(&out);
     let fields: Vec<&str> = out.split_terminator('\0').collect();

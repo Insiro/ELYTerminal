@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use ely_gpui_component::git::{LineKind, Stretch};
+use ely_gpui_component::git::{ChangeSection, LineKind, Stretch};
 use gpui::SharedString;
 
 use super::*;
@@ -415,20 +415,31 @@ fn a_discard_restores_edits_and_deletes_new_files() {
 
     let state = read(&root);
     for change in &state.unstaged {
-        discard(&root, change, ChangeSection::Unstaged).expect("a discarded edit");
+        discard(&root, std::slice::from_ref(change), ChangeSection::Unstaged)
+            .expect("a discarded edit");
     }
     let (nested, loose): (Vec<_>, Vec<_>) =
         (state.untracked.iter()).partition(|change| change.path == Path::new("nested/"));
     for change in loose {
-        discard(&root, change, ChangeSection::Untracked).expect("a deleted file");
+        discard(
+            &root,
+            std::slice::from_ref(change),
+            ChangeSection::Untracked,
+        )
+        .expect("a deleted file");
     }
-    let error = discard(&root, nested[0], ChangeSection::Untracked).expect_err("git skips it");
+    let error = discard(
+        &root,
+        std::slice::from_ref(nested[0]),
+        ChangeSection::Untracked,
+    )
+    .expect_err("git skips it");
     assert!(
         format!("{error:#}").contains("removed nothing"),
         "{error:#}"
     );
     let staged = read(&root).staged;
-    let kept = discard(&root, &staged[0], ChangeSection::Staged);
+    let kept = discard(&root, &staged[..1], ChangeSection::Staged);
     assert!(kept.is_err(), "a staged change is not discarded");
 
     let text = |path| fs::read_to_string(root.join(path)).expect("a file");
@@ -442,6 +453,41 @@ fn a_discard_restores_edits_and_deletes_new_files() {
     assert_eq!(state.staged, [change("both.txt", GitStatus::Modified)]);
     assert!(state.unstaged.is_empty(), "{:?}", state.unstaged);
     assert_eq!(state.untracked, [change("nested/", GitStatus::Untracked)]);
+}
+
+#[test]
+fn a_folder_discards_in_one_call_a_kind_and_names_a_partial_failure() {
+    let root = repository("git-discard-all");
+    write(&root, "d/edited.txt", "base\n");
+    prepare(&root, &["add", "."]);
+    prepare(&root, &["commit", "-qm", "base"]);
+    write(&root, "d/edited.txt", "edit\n");
+    write(&root, "d/intended.txt", "new\n");
+    prepare(&root, &["add", "-N", "d/intended.txt"]);
+    write(&root, "d/loose/a.txt", "a\n");
+    write(&root, "d/b.txt", "b\n");
+    let state = read(&root);
+    discard(&root, &state.unstaged, ChangeSection::Unstaged).expect("edits discarded");
+    discard(&root, &state.untracked, ChangeSection::Untracked).expect("files deleted");
+    assert_eq!(
+        fs::read_to_string(root.join("d/edited.txt")).unwrap(),
+        "base\n"
+    );
+    for path in ["d/intended.txt", "d/loose", "d/b.txt"] {
+        assert!(!root.join(path).exists(), "{path} goes");
+    }
+    write(&root, "d/edited.txt", "again\n");
+    write(&root, "d/intended.txt", "new\n");
+    prepare(&root, &["add", "-N", "d/intended.txt"]);
+    let mut changes = read(&root).unstaged;
+    changes.push(change("d/nope.txt", GitStatus::Modified));
+    let error = discard(&root, &changes, ChangeSection::Unstaged).expect_err("restore fails");
+    let error = format!("{error:#}");
+    assert!(
+        error.contains("1 of 3 discarded") && error.contains("restore"),
+        "{error}"
+    );
+    assert!(!root.join("d/intended.txt").exists(), "rm still ran");
 }
 
 mod diffs;

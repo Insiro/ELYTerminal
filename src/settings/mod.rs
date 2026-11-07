@@ -179,6 +179,8 @@ pub struct Settings {
     pub session_menu: bool,
     /// A right press on a Files name opens its menu.
     pub files_menu: bool,
+    /// The Git panel groups changes by folder.
+    pub git_tree: bool,
     pub show_panel: bool,
     pub panel: PanelTab,
     /// The sessions and right columns' widths, in pixels, as their borders were dragged.
@@ -246,6 +248,7 @@ impl Default for Settings {
             drag_sessions: true,
             session_menu: true,
             files_menu: false,
+            git_tree: false,
             show_panel: true,
             panel: PanelTab::Git,
             sessions_width: 240.0,

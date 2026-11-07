@@ -25,6 +25,18 @@ fn a_file_without_files_menu_leaves_it_off() {
 }
 
 #[test]
+fn a_file_without_git_tree_lists_changes_flat() {
+    let settings: Settings = serde_json::from_str("{}").expect("every field has a default");
+    assert!(
+        !settings.git_tree,
+        "the Git panel lists changes flat by default"
+    );
+    let settings: Settings =
+        serde_json::from_str(r#"{"git_tree": true}"#).expect("git_tree is a setting");
+    assert!(settings.git_tree);
+}
+
+#[test]
 fn a_backdrop_is_acrylic_unless_named() {
     let settings: Settings = serde_json::from_str("{}").expect("every field has a default");
     assert_eq!(settings.backdrop, Backdrop::Acrylic);

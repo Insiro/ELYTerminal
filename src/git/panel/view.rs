@@ -1,13 +1,14 @@
 use std::path::Path;
 
 use ely_gpui_component::{
+    buttons::{ButtonVariant, IconButton},
     feedback::Alert,
     git::{ChangeSection, Changed, ChangesList, CommitInput, CommitList, DiffViewer},
     i18n::text,
     lists::GitStatus,
     overlays::{ConfirmDialog, Dialog},
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, TextSize},
+    theme::{ActiveTheme, ControlSize, TextSize},
     typography::{Caption, Ellipsis},
 };
 use gpui::{
@@ -19,7 +20,7 @@ use super::{GitPanel, State};
 use crate::git::{Change, Repo};
 
 /// The most files a section lists: Ely's list draws every row, and each row costs every frame.
-const LISTED: usize = 500;
+pub(super) const LISTED: usize = 500;
 
 /// `path` as the panel shows it, one string to a path, on one line: as it is, or quoted as git quotes a name with control characters, quotes, backslashes or bytes not in UTF-8.
 pub(super) fn shown(path: &Path) -> SharedString {
@@ -88,7 +89,7 @@ fn cut(repo: &Repo) -> Option<(usize, usize)> {
 }
 
 /// The key of what discarding `change` costs.
-fn loss(change: &Change, section: ChangeSection) -> &'static str {
+pub(super) fn loss(change: &Change, section: ChangeSection) -> &'static str {
     match (section, change.status) {
         (ChangeSection::Untracked, _) if is_folder(&change.path) => "et.git.loss_folder",
         (ChangeSection::Untracked, _) | (_, GitStatus::Added | GitStatus::Renamed) => {
@@ -111,7 +112,7 @@ fn head(repo: &Repo) -> (IconName, String) {
 }
 
 /// Ely's key for what a diff from `section` shows.
-fn compared(section: ChangeSection) -> &'static str {
+pub(super) fn compared(section: ChangeSection) -> &'static str {
     match section {
         ChangeSection::Conflicted => "git.changes.conflicted",
         ChangeSection::Staged => "git.changes.staged",
@@ -134,6 +135,20 @@ fn heading(words: SharedString, cx: &App) -> Div {
 }
 
 impl GitPanel {
+    /// The header's switch between a flat list and a folder tree.
+    fn tree_button(&self, cx: &Context<Self>) -> IconButton {
+        let (icon, words) = match self.tree {
+            true => (IconName::List, "et.git.as_list"),
+            false => (IconName::Folder, "et.git.as_tree"),
+        };
+        let flip = cx.entity();
+        IconButton::new("git-tree-toggle", icon)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Sm)
+            .tooltip(text(cx, words, &[]))
+            .on_click(move |_, _, cx| flip.update(cx, |panel, cx| panel.flip_tree(cx)))
+    }
+
     /// The open diff over the window, below the title bar.
     fn diff_dialog(&self, cx: &Context<Self>) -> Option<Dialog> {
         let diff = self.diff.as_ref()?;
@@ -168,14 +183,15 @@ impl GitPanel {
 
     /// The question before a discard, which cannot be taken back.
     fn discard_dialog(&self, cx: &Context<Self>) -> Option<ConfirmDialog> {
-        let (change, section) = self.discarding.clone()?;
+        let discarding = self.discarding.clone()?;
         let (close, confirm) = (cx.entity(), cx.entity());
-        let title = text(
-            cx,
-            "et.git.discard_title",
-            &[("path", &shown(&change.path))],
-        );
-        let cost = text(cx, loss(&change, section), &[]);
+        let title = text(cx, "et.git.discard_title", &[("path", &discarding.name)]);
+        let count = discarding.changes.len().to_string();
+        let new = (discarding.changes.iter())
+            .filter(|change| matches!(change.status, GitStatus::Added | GitStatus::Renamed))
+            .count()
+            .to_string();
+        let cost = text(cx, discarding.cost, &[("count", &count), ("new", &new)]);
         let dialog = ConfirmDialog::new("git-discard", title, cost, {
             move |_, cx| {
                 close.update(cx, |panel, cx| {
@@ -185,8 +201,8 @@ impl GitPanel {
             }
         });
         let confirmed = move |_: &mut Window, cx: &mut App| {
-            let change = change.clone();
-            confirm.update(cx, |panel, cx| panel.discard(change, section, cx))
+            let discarding = discarding.clone();
+            confirm.update(cx, |panel, cx| panel.discard(discarding, cx))
         };
         Some(
             dialog
@@ -200,7 +216,7 @@ impl GitPanel {
 impl Render for GitPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let root = div().size_full().flex().flex_col().gap_2();
-        let (repo, commits) = match &self.state {
+        let (repo, commits, graph) = match &self.state {
             State::Reading => return root,
             State::Outside => {
                 return root.child(Caption::new(text(cx, "et.git.outside", &[])).px_2());
@@ -210,7 +226,7 @@ impl Render for GitPanel {
                 let failed = Alert::new("git-failed", Severity::Danger, failed);
                 return root.child(failed.body(error.clone()));
             }
-            State::Read(repo, commits) => (repo, commits.clone()),
+            State::Read(repo, commits, graph) => (repo, commits.clone(), graph.clone()),
         };
         let theme = cx.theme();
         let (icon, name) = head(repo);
@@ -222,7 +238,8 @@ impl Render for GitPanel {
             .text_size(theme.text_size(TextSize::Sm))
             .font_weight(FontWeight::MEDIUM)
             .child(Icon::new(icon).color(theme.colors.fg_muted))
-            .child(div().min_w_0().child(Ellipsis::new(name.clone())));
+            .child(div().flex_1().min_w_0().child(Ellipsis::new(name.clone())))
+            .child(self.tree_button(cx));
         let error = self.error.as_ref().map(|(what, said)| {
             let dismiss = cx.entity();
             Alert::new("git-error", Severity::Danger, text(cx, what, &[]))
@@ -236,16 +253,20 @@ impl Render for GitPanel {
         });
         let (act, all, flip, commit) = (cx.entity(), cx.entity(), cx.entity(), cx.entity());
         let selected = (self.diff.as_ref()).map(|diff| (diff.section, shown(&diff.change.path)));
-        let changes = ChangesList::new("git-changes", rows(&repo.staged), rows(&repo.unstaged))
-            .conflicted(rows(&repo.conflicted))
-            .untracked(rows(&repo.untracked))
-            .when_some(selected, |list, (section, path)| {
-                list.selected(section, path)
-            })
-            .on_action(move |row, section, action, _, cx| {
-                act.update(cx, |panel, cx| panel.row_action(row, section, action, cx))
-            })
-            .on_all(move |stage, _, cx| all.update(cx, |panel, cx| panel.all(stage, cx)));
+        let changes = match self.tree {
+            true => self.grouped(repo, cx).into_any_element(),
+            false => ChangesList::new("git-changes", rows(&repo.staged), rows(&repo.unstaged))
+                .conflicted(rows(&repo.conflicted))
+                .untracked(rows(&repo.untracked))
+                .when_some(selected, |list, (section, path)| {
+                    list.selected(section, path)
+                })
+                .on_action(move |row, section, action, _, cx| {
+                    act.update(cx, |panel, cx| panel.row_action(row, section, action, cx))
+                })
+                .on_all(move |stage, _, cx| all.update(cx, |panel, cx| panel.all(stage, cx)))
+                .into_any_element(),
+        };
         let staged = repo.staged.len();
         let message = CommitInput::new("git-commit", &self.subject, &self.body, name, staged)
             .amend(self.amend)
@@ -258,7 +279,7 @@ impl Render for GitPanel {
             })
             .on_commit(move |_, cx| commit.update(cx, |panel, cx| panel.commit(cx)));
         let recent = (!commits.is_empty()).then(|| {
-            let list = CommitList::new("git-commits", commits);
+            let list = CommitList::new("git-commits", commits).graph(graph);
             div().flex_1().min_h_0().child(list)
         });
         root.child(branch)
