@@ -4,15 +4,16 @@ use ely_gpui_component::{
     feedback::Alert,
     git::{ChangeSection, Changed, ChangesList, CommitInput, CommitList, DiffViewer},
     i18n::text,
+    layout::ScrollArea,
     lists::GitStatus,
     overlays::{ConfirmDialog, Dialog},
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, TextSize},
+    theme::{ActiveTheme, ControlSize, TextSize},
     typography::{Caption, Ellipsis},
 };
 use gpui::{
-    App, Context, Div, FontWeight, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
+    App, Context, Div, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled,
+    Window, div, prelude::FluentBuilder,
 };
 
 use super::{GitPanel, State};
@@ -258,31 +259,36 @@ impl Render for GitPanel {
             })
             .on_commit(move |_, cx| commit.update(cx, |panel, cx| panel.commit(cx)));
         let recent = (!commits.is_empty()).then(|| {
+            // Ely's list scrolls itself and needs a definite height: one row each.
+            let rows = commits.len() as f32;
             let list = CommitList::new("git-commits", commits);
-            div().flex_1().min_h_0().child(list)
+            div()
+                .h(cx.theme().control_height(ControlSize::Lg) * rows)
+                .child(list)
         });
-        root.child(branch)
-            .children(error)
-            .child(
-                div()
-                    .id("git-changes-scroll")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .children(cut(repo).map(|(listed, total)| {
-                        let (listed, total) = (listed.to_string(), total.to_string());
-                        let counts = [("listed", listed.as_str()), ("total", total.as_str())];
-                        Caption::new(text(cx, "et.git.listed", &counts)).px_2()
-                    }))
-                    .child(changes),
-            )
+        let body = ScrollArea::new("git-body")
+            .vertical()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .children(cut(repo).map(|(listed, total)| {
+                let (listed, total) = (listed.to_string(), total.to_string());
+                let counts = [("listed", listed.as_str()), ("total", total.as_str())];
+                Caption::new(text(cx, "et.git.listed", &counts)).px_2()
+            }))
+            .child(changes)
             .child(message)
             .children(
                 recent
                     .is_some()
                     .then(|| heading(text(cx, "et.git.commits", &[]), cx)),
             )
-            .children(recent)
+            .children(recent);
+        root.child(branch)
+            .children(error)
+            .child(body)
             .children(self.diff_dialog(cx))
             .children(self.discard_dialog(cx))
     }
